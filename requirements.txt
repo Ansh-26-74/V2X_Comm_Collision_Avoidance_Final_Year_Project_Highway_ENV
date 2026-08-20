@@ -1,0 +1,3 @@
+highway-env>=1.9
+gymnasium>=0.29
+pygame>=2.5
