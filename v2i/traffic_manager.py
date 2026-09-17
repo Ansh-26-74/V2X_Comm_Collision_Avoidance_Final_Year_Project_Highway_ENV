@@ -15,6 +15,7 @@ This module has NO dependency on any V2V code.
 Ambulance / emergency vehicles are strictly excluded in this phase.
 """
 
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -41,6 +42,9 @@ class VehicleState(str, Enum):
     AUTHORIZED_TO_PROCEED = "AUTHORIZED_TO_PROCEED"
     CROSSING_INTERSECTION = "CROSSING_INTERSECTION"
     EXITING_INTERSECTION = "EXITING_INTERSECTION"
+    # Phase 13B V2V Evasive States
+    V2V_EVASIVE_MANEUVER = "V2V_EVASIVE_MANEUVER"
+    V2V_EMERGENCY_BRAKING = "V2V_EMERGENCY_BRAKING"
 
 
 class AmbulanceState(str, Enum):
@@ -55,6 +59,9 @@ class AmbulanceState(str, Enum):
     CROSSING = "CROSSING"
     EXITING_INTERSECTION = "EXITING_INTERSECTION"
     CLEARED = "CLEARED"
+    # Phase 13B V2V Evasive States
+    V2V_EVASIVE_MANEUVER = "V2V_EVASIVE_MANEUVER"
+    V2V_EMERGENCY_BRAKING = "V2V_EMERGENCY_BRAKING"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,6 +126,9 @@ class CivilianVehicle:
         self.in_intersection = False
         self.cleared = False
 
+        # Phase 13A: V2V Inter-vehicle status
+        self.hazard_status: str = "NORMAL"
+
         # Set heading angle (radians) and unit movement vector
         if self.approach == "NORTH":
             self.heading = math.pi / 2.0   # Facing South (+Y)
@@ -132,6 +142,29 @@ class CivilianVehicle:
         elif self.approach == "EAST":
             self.heading = math.pi         # Facing West (-X)
             self.vx, self.vy = -1.0, 0.0
+
+    def get_v2v_telemetry(self, now: float = 0.0):
+        """Phase 13A: Expose Cooperative Awareness Message (CAM) telemetry."""
+        from v2i.v2v_inter_manager import IntersectionV2VMessage
+        return IntersectionV2VMessage(
+            sender_id=self.vehicle_id,
+            receiver_id="BROADCAST",
+            vehicle_type="EMERGENCY" if getattr(self, "is_emergency", False) else "CIVILIAN",
+            x=float(self.x),
+            y=float(self.y),
+            vx=float(self.vx),
+            vy=float(self.vy),
+            speed=float(self.speed),
+            heading=float(self.heading),
+            hazard_status=self.hazard_status,
+            timestamp=float(now),
+        )
+
+    def set_hazard(self, hazard_status: str = "DECELERATING", target_speed: float | None = None) -> None:
+        """Phase 13A: Set hazard state and optional target deceleration speed."""
+        self.hazard_status = hazard_status
+        if target_speed is not None:
+            self.target_speed = float(target_speed)
 
     @property
     def front_pos(self) -> tuple[float, float]:
@@ -343,6 +376,29 @@ class AmbulanceVehicle(CivilianVehicle):
         self.overtaking_complete: bool = False
         self.obstacle_detected: bool = False
 
+        # Phase 13A: Intersection V2V Communication & Hazard Detection
+        self.v2v_enabled: bool = True
+        self.v2v_ttc: float = float("inf")
+        self.v2v_risk_state: str = "NONE"
+        self.latest_v2v_threat: Any | None = None
+        self.v2v_detected_vehicle_id: str | None = None
+        self.dist_to_conflict_zone: float = 9999.0
+        self.lateral_maneuver_allowed: bool = True
+
+        # Phase 13B: V2V Evasive Maneuver & Braking Fallback attributes
+        self.is_v2v_evading: bool = False
+        self.v2v_evasion_complete: bool = False
+        self.v2v_emergency_braking: bool = False
+        self.v2v_maneuver_attempted: bool = False
+
+        # Phase 13D Step 3: Live AI Trajectory Prediction attributes
+        self.latest_ai_prediction: Any | None = None
+        self.ai_risk_state: str = "INSUFFICIENT_DATA"
+        self.ai_prediction_available: bool = False
+
+        # Phase 13D Step 4: Deterministic Safety Fusion attribute
+        self.latest_safety_fusion: Any | None = None
+
     def evaluate_overtaking(
         self,
         vehicles: list[CivilianVehicle],
@@ -397,6 +453,108 @@ class AmbulanceVehicle(CivilianVehicle):
                     return False
 
         return True
+
+    def evaluate_v2v_hazards(
+        self,
+        v2v_messages: list,
+        now: float = 0.0,
+    ) -> tuple[float, str, Any]:
+        """Phase 13A: Evaluate V2V Cooperative Awareness Messages from lead vehicles in corridor.
+
+        Filters:
+          1. Vehicle is not self
+          2. Movement direction is aligned (dot product >= 0.7)
+          3. Vehicle is ahead along travel axis (longitudinal_dist > 0)
+          4. Lateral offset is within movement corridor (|dx| <= 45.0px)
+
+        TTC calculation:
+          closing_speed = ambulance_speed - lead_speed
+          If closing_speed <= 1.0 px/s: TTC = inf (SAFE)
+          bumper_gap = longitudinal_dist - (self.length + lead_len)/2.0
+          TTC = bumper_gap / closing_speed
+
+        Risk:
+          CRITICAL: TTC < 2.0s
+          WARNING:  2.0s <= TTC <= 4.0s
+          SAFE:     TTC > 4.0s
+        """
+        if not self.v2v_enabled:
+            return self.v2v_ttc, self.v2v_risk_state, self.latest_v2v_threat
+
+        if not v2v_messages:
+            # Wireless CAM validity hold: preserve active threat between 10Hz packets until timeout (0.4s)
+            if self.latest_v2v_threat is not None:
+                msg_time = getattr(self.latest_v2v_threat, "timestamp", 0.0)
+                if now - msg_time > 0.4:
+                    self.v2v_ttc = float("inf")
+                    self.v2v_risk_state = "NONE"
+                    self.latest_v2v_threat = None
+                    self.v2v_detected_vehicle_id = None
+            else:
+                self.v2v_ttc = float("inf")
+                self.v2v_risk_state = "NONE"
+            return self.v2v_ttc, self.v2v_risk_state, self.latest_v2v_threat
+
+        min_ttc = float("inf")
+        highest_threat = None
+        vehicle_detected = False
+
+        for msg in v2v_messages:
+            if msg.sender_id == self.vehicle_id:
+                continue
+
+            # Direction alignment check
+            dot = self.vx * msg.vx + self.vy * msg.vy
+            if dot < 0.7:
+                continue
+
+            # Longitudinal distance along travel direction (South approach: traveling North, -Y)
+            dx = msg.x - self.x
+            dy = msg.y - self.y
+            longitudinal_dist = dx * self.vx + dy * self.vy
+            if longitudinal_dist <= 0.0:
+                # Behind or level with ambulance
+                continue
+
+            # Lateral corridor check (must be in same or adjacent lane)
+            lateral_dist = abs(dx * (-self.vy) + dy * self.vx)
+            corridor_threshold = 22.0 if (self.v2v_evasion_complete or abs(self.x - SOUTH_OVERTAKE_LANE_X) < 1.0) else 45.0
+            if lateral_dist > corridor_threshold:
+                continue
+
+            vehicle_detected = True
+            lead_len = 36.0  # standard civilian length
+            bumper_gap = longitudinal_dist - (self.length + lead_len) / 2.0
+            closing_speed = self.speed - msg.speed
+
+            if closing_speed <= 1.0:
+                ttc = float("inf")
+            else:
+                ttc = max(0.0, bumper_gap) / closing_speed
+
+            if ttc < min_ttc:
+                min_ttc = ttc
+                highest_threat = msg
+
+        if not vehicle_detected:
+            self.v2v_ttc = float("inf")
+            self.v2v_risk_state = "NONE"
+            self.latest_v2v_threat = None
+            self.v2v_detected_vehicle_id = None
+            return float("inf"), "NONE", None
+
+        self.v2v_ttc = min_ttc
+        self.latest_v2v_threat = highest_threat
+        self.v2v_detected_vehicle_id = highest_threat.sender_id if highest_threat else None
+
+        if min_ttc < 2.0:
+            self.v2v_risk_state = "CRITICAL"
+        elif min_ttc <= 4.0:
+            self.v2v_risk_state = "WARNING"
+        else:
+            self.v2v_risk_state = "SAFE"
+
+        return self.v2v_ttc, self.v2v_risk_state, self.latest_v2v_threat
 
     def calculate_eta(self, stop_line_coord: float) -> float:
         """Calculate dynamic Estimated Time of Arrival to the South stop line."""
@@ -487,6 +645,10 @@ class AmbulanceVehicle(CivilianVehicle):
         dist_to_stop_line = self.get_distance_to_point(stop_line_coord)
         dist_to_enter = self.get_distance_to_point(intersection_enter)
 
+        # Phase 13A: Update conflict zone proximity and maneuver constraint
+        self.dist_to_conflict_zone = max(0.0, dist_to_enter)
+        self.lateral_maneuver_allowed = (dist_to_enter > 15.0 and not self.in_intersection and not self.cleared)
+
         # Signal stop requirement:
         # Ambulance only stops for RED if NOT authorized, before stop line, and not yet in intersection
         signal_stop_needed = False
@@ -553,8 +715,42 @@ class AmbulanceVehicle(CivilianVehicle):
             if lead_blocking.speed < self.target_speed:
                 self.obstacle_detected = True
 
-        # 4. Overtaking decision: when authorized and obstructed on South approach
-        if (
+        # 4. Phase 13B: V2V Evasive Maneuver vs. Phase 7 Overtaking decision
+        # Check if a V2V CRITICAL hazard warrants an evasive lane maneuver:
+        v2v_critical_threat = (
+            self.v2v_risk_state == "CRITICAL"
+            and self.latest_v2v_threat is not None
+            and self.latest_v2v_threat.y < self.y
+            and not self.v2v_evasion_complete
+            and not self.is_v2v_evading
+            and not self.in_intersection
+            and not self.cleared
+            and not self.past_stop_line
+            and self.lateral_maneuver_allowed
+        )
+
+        if v2v_critical_threat:
+            target_x = SOUTH_OVERTAKE_LANE_X if abs(self.x - SOUTH_PRIMARY_LANE_X) < 15.0 else SOUTH_PRIMARY_LANE_X
+            if self.evaluate_overtaking(vehicles_list, stop_line_coord, intersection_enter, target_x):
+                # Adjacent lane is SAFE -> initiate smooth lateral evasion
+                self.is_v2v_evading = True
+                self.is_overtaking = True
+                self.target_lane_x = target_x
+                self.v2v_emergency_braking = False
+                self.v2v_maneuver_attempted = True
+                self.ambulance_state = AmbulanceState.V2V_EVASIVE_MANEUVER
+                self.state = VehicleState.V2V_EVASIVE_MANEUVER
+                logger.info(f"[{self.vehicle_id}] V2V CRITICAL TTC ({self.v2v_ttc:.2f}s) -> INITIATING V2V EVASIVE MANEUVER to x={target_x}")
+            else:
+                # Adjacent lane is BLOCKED -> Fallback to controlled emergency braking
+                self.is_v2v_evading = False
+                self.is_overtaking = False
+                self.v2v_emergency_braking = True
+                self.v2v_maneuver_attempted = True
+                self.ambulance_state = AmbulanceState.V2V_EMERGENCY_BRAKING
+                self.state = VehicleState.V2V_EMERGENCY_BRAKING
+                logger.warning(f"[{self.vehicle_id}] V2V CRITICAL TTC ({self.v2v_ttc:.2f}s) -> TARGET LANE BLOCKED -> INITIATING EMERGENCY BRAKING")
+        elif (
             self.is_authorized
             and self.obstacle_detected
             and not self.is_overtaking
@@ -568,8 +764,12 @@ class AmbulanceVehicle(CivilianVehicle):
                 self.target_lane_x = target_x
                 logger.info(f"[{self.vehicle_id}] INITIATING OVERTAKING maneuver -> target lane x={self.target_lane_x}")
 
+        # V2V Recovery: if hazard cleared while emergency braking, release emergency brake
+        if self.v2v_emergency_braking and self.v2v_risk_state in ("SAFE", "NONE"):
+            self.v2v_emergency_braking = False
+
         # 5. Smooth lateral lane change kinematics
-        if self.is_overtaking:
+        if self.is_overtaking or self.is_v2v_evading:
             dx = self.target_lane_x - self.x
             step = math.copysign(min(abs(dx), LATERAL_SPEED * dt), dx)
             prospective_rect = pygame.Rect(
@@ -586,6 +786,10 @@ class AmbulanceVehicle(CivilianVehicle):
                 self.x += step
                 if abs(self.target_lane_x - self.x) < 0.5:
                     self.x = self.target_lane_x
+                    if self.is_v2v_evading:
+                        self.is_v2v_evading = False
+                        self.v2v_evasion_complete = True
+                        logger.info(f"[{self.vehicle_id}] V2V EVASIVE lane change complete at x={self.x}")
                     self.is_overtaking = False
                     self.overtaking_complete = True
                     logger.info(f"[{self.vehicle_id}] OVERTAKING lane change complete at x={self.x}")
@@ -610,12 +814,45 @@ class AmbulanceVehicle(CivilianVehicle):
             if veh_stop_dist < effective_stop_dist:
                 effective_stop_dist = veh_stop_dist
 
+        # Phase 13B: If V2V emergency braking is active, enforce strict stop behind threat
+        if self.v2v_emergency_braking:
+            threat_gap = 9999.0
+            if self.latest_v2v_threat is not None and self.latest_v2v_threat.y < self.y:
+                threat_rear_y = self.latest_v2v_threat.y + 18.0  # civilian half length
+                threat_gap = max(0.0, self.front_pos[1] - threat_rear_y)
+            elif lead_in_lane is not None:
+                threat_gap = (self.front_pos[1] - lead_in_lane.rear_pos[1])
+
+            v2v_stop_dist = max(0.0, threat_gap - MIN_FOLLOW_GAP)
+            if v2v_stop_dist < effective_stop_dist:
+                effective_stop_dist = v2v_stop_dist
+
         # 7. Acceleration and smooth deterministic deceleration
         desired_accel = 0.0
         self.braking = False
         BRAKE_LOOKAHEAD = 160.0
 
-        if effective_stop_dist < 9990.0:
+        if self.v2v_emergency_braking:
+            # High-priority controlled emergency braking fallback
+            if effective_stop_dist <= 2.0:
+                target_v = 0.0
+                desired_accel = -EMERGENCY_BRAKE
+                self.braking = True
+                if self.speed < 4.0 or effective_stop_dist <= 0.0:
+                    self.speed = 0.0
+                    desired_accel = 0.0
+            elif effective_stop_dist < BRAKE_LOOKAHEAD:
+                target_v = min(self.target_speed, self.target_speed * math.sqrt(max(0.0, effective_stop_dist) / BRAKE_LOOKAHEAD))
+                err = target_v - self.speed
+                if err < 0:
+                    desired_accel = max(-EMERGENCY_BRAKE, err * 6.0)
+                    self.braking = True
+                else:
+                    desired_accel = min(self.max_emergency_accel, err * 2.0)
+            else:
+                desired_accel = -MAX_BRAKE
+                self.braking = True
+        elif effective_stop_dist < 9990.0:
             if effective_stop_dist <= 1.5:
                 target_v = 0.0
                 desired_accel = -MAX_BRAKE
@@ -672,6 +909,12 @@ class AmbulanceVehicle(CivilianVehicle):
         elif self.in_intersection:
             self.state = VehicleState.CROSSING_INTERSECTION
             self.ambulance_state = AmbulanceState.CROSSING_INTERSECTION
+        elif self.is_v2v_evading:
+            self.state = VehicleState.V2V_EVASIVE_MANEUVER
+            self.ambulance_state = AmbulanceState.V2V_EVASIVE_MANEUVER
+        elif self.v2v_emergency_braking:
+            self.state = VehicleState.V2V_EMERGENCY_BRAKING
+            self.ambulance_state = AmbulanceState.V2V_EMERGENCY_BRAKING
         elif self.is_overtaking:
             self.state = VehicleState.OVERTAKING
             self.ambulance_state = AmbulanceState.OVERTAKING
@@ -708,6 +951,9 @@ class TrafficManager:
         max_vehicles: int = 7,
         spawn_interval: float = 3.6,
         ambulance_spawn_time: float = 8.5,
+        enable_v2v_hazard: bool = True,
+        ai_predictor: Any | None = None,
+        safety_fusion: Any | None = None,
     ):
         self.cx = center_x
         self.cy = center_y
@@ -728,6 +974,28 @@ class TrafficManager:
         self._ambulance_spawned = False
         self.ambulance_cleared_events: list[str] = []
 
+        # Phase 13A: V2V Inter-vehicle hazard simulation attributes
+        self.enable_v2v_hazard: bool = enable_v2v_hazard
+        self._v2v_hazard_injected: bool = False
+
+        # Phase 13D: Live AI Trajectory Predictor (Step 3)
+        self.ai_predictor = ai_predictor
+        self.ai_loading: bool = (ai_predictor is None)
+        self.ai_error: str | None = None
+        self.latest_ai_prediction: Any | None = None
+        self._pending_v2v_telemetry: dict[str, deque] = {}
+        self._last_ai_feed_time: float = -float("inf")
+
+        # Phase 13D: Deterministic Safety Fusion Engine (Step 4)
+        if safety_fusion is None:
+            try:
+                from ai.intersection_ai.safety_fusion import IntersectionSafetyFusion
+                self.safety_fusion = IntersectionSafetyFusion()
+            except Exception:
+                self.safety_fusion = None
+        else:
+            self.safety_fusion = safety_fusion
+
         # Lane center coordinates
         self.lane_coords = {
             "NORTH": {"x": self.cx - self.half_road // 2, "stop": self.cy - self.stop_line_dist, "enter": self.cy - self.half_road, "exit": self.cy + self.half_road},
@@ -739,6 +1007,37 @@ class TrafficManager:
         # Deterministic rotation order for approaches
         self.approach_queue = ["NORTH", "EAST", "SOUTH", "WEST"]
         self._approach_idx = 0
+
+    def set_ai_predictor(self, predictor: Any) -> None:
+        """Safely attach asynchronously loaded AI predictor and flush pending telemetry."""
+        self.ai_predictor = predictor
+        self.ai_loading = False
+        if predictor is not None:
+            # Flush retained telemetry samples in chronological order
+            for sender_id, msgs in list(self._pending_v2v_telemetry.items()):
+                for msg in msgs:
+                    self.ai_predictor.add_telemetry(msg)
+            self._pending_v2v_telemetry.clear()
+
+            # Generate prediction immediately if C-01 or threat is available
+            threat_id = "C-01"
+            if self.ambulance is not None and self.ambulance.latest_v2v_threat:
+                threat_id = self.ambulance.latest_v2v_threat.sender_id
+            try:
+                amb_pos = (self.ambulance.x, self.ambulance.y) if self.ambulance else None
+                amb_spd = self.ambulance.speed if self.ambulance else 95.0
+                pred = self.ai_predictor.predict(
+                    sender_id=threat_id,
+                    ambulance_pos=amb_pos,
+                    ambulance_speed=amb_spd,
+                )
+                self.latest_ai_prediction = pred
+                if self.ambulance is not None and pred.prediction_available:
+                    self.ambulance.latest_ai_prediction = pred
+                    self.ambulance.ai_prediction_available = True
+                    self.ambulance.ai_risk_state = pred.ai_risk_state
+            except Exception as e:
+                logger.warning(f"[TRAFFIC_MANAGER] Initial AI prediction after attach handled safely: {e}")
 
     def _spawn_ambulance(self) -> None:
         """Spawn emergency vehicle AMB-01 on South approach lane."""
@@ -765,6 +1064,7 @@ class TrafficManager:
         sim_time: float = 0.0,
         v2i_channel: Any = None,
         rsu_pos: tuple[float, float] | None = None,
+        v2v_inter_manager: Any = None,
     ) -> None:
         """Update all active vehicles, ambulance, and periodically spawn new traffic."""
         # 1. Deterministic spawn check for AMB-01
@@ -790,6 +1090,28 @@ class TrafficManager:
                 lead_vehicle=lead_veh,
                 intersection_blocked=blocked,
             )
+
+        # Ingestion of civilian telemetry (e.g. C-01) while ambulance has not yet spawned
+        if self.ambulance is None:
+            for v in self.vehicles:
+                if v.vehicle_id == "C-01":
+                    v_msg = v.get_v2v_telemetry(sim_time)
+                    if self.ai_predictor is not None:
+                        hist = self.ai_predictor.history_buffers.get("C-01")
+                        if not hist or abs(hist[-1].timestamp - v_msg.timestamp) > 0.05:
+                            self.ai_predictor.add_telemetry(v_msg)
+                            pred = self.ai_predictor.predict(
+                                sender_id="C-01",
+                                ambulance_pos=None,
+                                ambulance_speed=95.0,
+                            )
+                            self.latest_ai_prediction = pred
+                    else:
+                        if "C-01" not in self._pending_v2v_telemetry:
+                            self._pending_v2v_telemetry["C-01"] = deque(maxlen=20)
+                        buf = self._pending_v2v_telemetry["C-01"]
+                        if not buf or abs(buf[-1].timestamp - v_msg.timestamp) > 0.05:
+                            buf.append(v_msg)
 
         # 3. Update ambulance (Phase 3 & 4: obeys traffic signals, no V2I preemption)
         if self.ambulance is not None:
@@ -825,6 +1147,104 @@ class TrafficManager:
                     v2i_channel=v2i_channel,
                     stop_line_coord=lc["stop"],
                 )
+
+            # Phase 13A: V2V communication step (AMB-01 <-> Civilian vehicles)
+            if v2v_inter_manager is not None:
+                amb_pos = (self.ambulance.x, self.ambulance.y)
+                for v in self.vehicles:
+                    msg = v.get_v2v_telemetry(sim_time)
+                    v2v_inter_manager.broadcast(sim_time, msg, receiver_pos=amb_pos)
+
+                delivered_v2v = v2v_inter_manager.deliver(sim_time, receiver_id="AMB-01")
+                self.ambulance.evaluate_v2v_hazards(delivered_v2v, now=sim_time)
+
+                # Phase 13D Step 3: Live V2V + AI Trajectory Prediction Integration
+                if self.ai_predictor is not None:
+                    try:
+                        if delivered_v2v:
+                            for v2v_msg in delivered_v2v:
+                                self.ai_predictor.add_telemetry(v2v_msg)
+
+                                target_id = v2v_msg.sender_id
+                                threat_id = self.ambulance.latest_v2v_threat.sender_id if self.ambulance.latest_v2v_threat else None
+
+                                if target_id == threat_id or threat_id is None or target_id == "C-01" or not self.ambulance.ai_prediction_available:
+                                    pred = self.ai_predictor.predict(
+                                        sender_id=target_id,
+                                        ambulance_pos=(self.ambulance.x, self.ambulance.y),
+                                        ambulance_speed=self.ambulance.speed,
+                                    )
+                                    self.latest_ai_prediction = pred
+                                    if pred.prediction_available:
+                                        self.ambulance.latest_ai_prediction = pred
+                                        self.ambulance.ai_prediction_available = True
+                                        self.ambulance.ai_risk_state = pred.ai_risk_state
+                                        self._last_ai_feed_time = sim_time
+                                    elif self.ambulance.latest_ai_prediction is None:
+                                        self.ambulance.latest_ai_prediction = pred
+                                        self.ambulance.ai_prediction_available = False
+                                        self.ambulance.ai_risk_state = pred.ai_risk_state
+                        else:
+                            # 0.4s telemetry hold across 10 Hz packet boundaries
+                            if self.ambulance.latest_ai_prediction is not None:
+                                if sim_time - self._last_ai_feed_time > 0.4:
+                                    self.ambulance.latest_ai_prediction = None
+                                    self.ambulance.ai_prediction_available = False
+                                    self.ambulance.ai_risk_state = "INSUFFICIENT_DATA"
+                    except Exception as e:
+                        logger.warning(f"[TRAFFIC_MANAGER] AI prediction exception handled safely: {e}")
+                else:
+                    # Retain recent valid V2V telemetry while AI is still loading asynchronously
+                    if delivered_v2v:
+                        for v2v_msg in delivered_v2v:
+                            sender = v2v_msg.sender_id
+                            if sender not in self._pending_v2v_telemetry:
+                                self._pending_v2v_telemetry[sender] = deque(maxlen=20)
+                            self._pending_v2v_telemetry[sender].append(v2v_msg)
+
+                # Phase 13D Step 4: Deterministic Safety Fusion Evaluation
+                if self.safety_fusion is not None:
+                    try:
+                        gap = 9999.0
+                        if self.ambulance.latest_v2v_threat is not None:
+                            lead_threat = self.ambulance.latest_v2v_threat
+                            gap = (self.ambulance.y - self.ambulance.length / 2.0) - (lead_threat.y + 36.0 / 2.0)
+
+                        target_x = SOUTH_OVERTAKE_LANE_X if abs(self.ambulance.x - SOUTH_PRIMARY_LANE_X) < 15.0 else SOUTH_PRIMARY_LANE_X
+                        target_safe = self.ambulance.evaluate_overtaking(
+                            vehicles=self.vehicles,
+                            stop_line_coord=lc["stop"],
+                            intersection_enter=lc["enter"],
+                            target_x=target_x,
+                        )
+
+                        fusion_res = self.safety_fusion.evaluate(
+                            ai_prediction=self.ambulance.latest_ai_prediction,
+                            ttc=self.ambulance.v2v_ttc,
+                            ttc_risk=self.ambulance.v2v_risk_state,
+                            deterministic_clearance=max(0.0, gap),
+                            lateral_maneuver_allowed=self.ambulance.lateral_maneuver_allowed,
+                            target_lane_safe=target_safe,
+                            sim_time=sim_time,
+                            in_intersection=self.ambulance.in_intersection,
+                        )
+                        self.ambulance.latest_safety_fusion = fusion_res
+                    except Exception as e:
+                        logger.warning(f"[TRAFFIC_MANAGER] Safety fusion exception handled safely: {e}")
+
+                # Deterministic demonstration hazard injection before conflict zone
+                if self.enable_v2v_hazard and not self._v2v_hazard_injected:
+                    if (
+                        self.ambulance.is_authorized
+                        and self.ambulance.speed > 30.0
+                        and self.ambulance.dist_to_conflict_zone > 25.0
+                    ):
+                        for v in self.vehicles:
+                            if v.approach == "SOUTH" and v.y < self.ambulance.y and (self.ambulance.y - v.y) < 200.0:
+                                v.set_hazard("DECELERATING", target_speed=15.0)
+                                self._v2v_hazard_injected = True
+                                logger.info(f"[{v.vehicle_id}] V2V HAZARD TRIGGERED: Unexpected deceleration to 15.0 px/s")
+                                break
 
             if self._is_off_screen(self.ambulance):
                 self.ambulance = None
@@ -907,8 +1327,12 @@ class TrafficManager:
 
             if clear:
                 color, _ = random.choice(CIVILIAN_PALETTE)
-                vid = f"C{self._vehicle_counter:02d}"
-                self._vehicle_counter += 1
+                # Ensure primary lead vehicle on SOUTH corridor is deterministically named C-01
+                if approach == "SOUTH" and not any(v.vehicle_id == "C-01" for v in self.vehicles):
+                    vid = "C-01"
+                else:
+                    vid = f"C{self._vehicle_counter:02d}"
+                    self._vehicle_counter += 1
                 veh = CivilianVehicle(
                     vehicle_id=vid,
                     approach=approach,
@@ -941,3 +1365,11 @@ class TrafficManager:
         self.ambulance_cleared_events.clear()
         self._spawn_timer = 0.5
         self._vehicle_counter = 1
+        self._v2v_hazard_injected = False
+        self._pending_v2v_telemetry.clear()
+        self.latest_ai_prediction = None
+        if self.ai_predictor is not None:
+            self.ai_predictor.reset()
+        if self.safety_fusion is not None:
+            self.safety_fusion.reset()
+        self._last_ai_feed_time = -float("inf")

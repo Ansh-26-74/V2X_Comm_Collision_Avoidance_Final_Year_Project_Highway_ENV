@@ -55,6 +55,19 @@ class EventLogger:
         self._delivered_packet_count: int = 0
         self._dropped_packet_count: int = 0
 
+        # Phase 13A: V2V tracking states
+        self._last_v2v_detected_sender: str | None = None
+        self._last_v2v_risk: str = "NONE"
+
+        # Phase 13B: V2V maneuver tracking states
+        self._last_amb_v2v_evading: bool = False
+        self._last_amb_v2v_evasion_complete: bool = False
+        self._last_amb_v2v_emergency_braking: bool = False
+
+        # Phase 13D: AI Trajectory Prediction tracking states (Step 3)
+        self._last_ai_available: bool = False
+        self._last_ai_risk: str = "INSUFFICIENT_DATA"
+
     def add_event(
         self,
         timestamp: float,
@@ -85,8 +98,9 @@ class EventLogger:
 
         return True
 
-    # Convenience alias
+    # Convenience aliases
     log_event = add_event
+    log = add_event
 
     def get_events(self) -> list[SimulationEvent]:
         """Return chronological list of retained events."""
@@ -104,6 +118,13 @@ class EventLogger:
         self._last_conflict_occupied = None
         self._delivered_packet_count = 0
         self._dropped_packet_count = 0
+        self._last_v2v_detected_sender = None
+        self._last_v2v_risk = "NONE"
+        self._last_amb_v2v_evading = False
+        self._last_amb_v2v_evasion_complete = False
+        self._last_amb_v2v_emergency_braking = False
+        self._last_ai_available = False
+        self._last_ai_risk = "INSUFFICIENT_DATA"
 
     def observe_system(
         self,
@@ -111,6 +132,7 @@ class EventLogger:
         signal_controller,
         traffic_manager=None,
         v2i_channel=None,
+        v2v_inter_channel=None,
     ) -> list[SimulationEvent]:
         """Inspect active simulation components and emit events on verified state transitions.
 
@@ -174,16 +196,17 @@ class EventLogger:
         if traffic_manager is not None and traffic_manager.ambulance is not None:
             amb = traffic_manager.ambulance
 
-            # Overtaking
+            # Overtaking (Phase 7 Obstacle Overtaking — distinct from Phase 13 V2V evasive maneuver)
             is_ot = getattr(amb, "is_overtaking", False)
-            if is_ot and not self._last_amb_overtaking:
+            is_v2v = getattr(amb, "is_v2v_evading", False) or getattr(amb, "v2v_evasion_complete", False)
+            if is_ot and not self._last_amb_overtaking and not is_v2v:
                 self._last_amb_overtaking = True
                 msg = f"AMB-01 OVERTAKING: Obstacle avoided -> Changing to Lane 2 (x={amb.target_lane_x:.0f})"
                 if self.add_event(sim_time, EventCategory.TRAFFIC, "AMB_OVERTAKING", msg):
                     new_events.append(self.events[-1])
             elif not is_ot and self._last_amb_overtaking:
                 self._last_amb_overtaking = False
-                if getattr(amb, "overtaking_complete", False):
+                if getattr(amb, "overtaking_complete", False) and not is_v2v:
                     msg = "AMB-01 Overtaking complete — Established in safe passing lane"
                     if self.add_event(sim_time, EventCategory.TRAFFIC, "AMB_OVERTAKE_COMPLETE", msg):
                         new_events.append(self.events[-1])
@@ -203,6 +226,87 @@ class EventLogger:
                 msg = "AMB-01 CLEARED INTERSECTION (Full body rear bumper exit)"
                 if self.add_event(sim_time, EventCategory.EMERGENCY, "AMB_CLEARED_INTERSECTION", msg):
                     new_events.append(self.events[-1])
+
+        # 5. Phase 13A: V2V Inter-Vehicle Communication & Risk Events
+        if traffic_manager is not None and traffic_manager.ambulance is not None:
+            amb = traffic_manager.ambulance
+            threat = getattr(amb, "latest_v2v_threat", None)
+            risk = getattr(amb, "v2v_risk_state", "NONE")
+
+            if threat is not None and threat.sender_id != self._last_v2v_detected_sender:
+                self._last_v2v_detected_sender = threat.sender_id
+                if self.add_event(sim_time, EventCategory.COMMUNICATION, "V2V_VEHICLE_DETECTED", f"V2V peer link established with lead vehicle {threat.sender_id}"):
+                    new_events.append(self.events[-1])
+                if self.add_event(sim_time, EventCategory.COMMUNICATION, "V2V_TELEMETRY_RECEIVED", f"V2V telemetry received from {threat.sender_id} | Speed: {threat.speed:.0f}px/s, Hazard: {threat.hazard_status}"):
+                    new_events.append(self.events[-1])
+
+            if risk != self._last_v2v_risk:
+                self._last_v2v_risk = risk
+                if risk == "WARNING":
+                    threat_id = threat.sender_id if threat else "LEAD"
+                    if self.add_event(sim_time, EventCategory.SAFETY, "V2V_TTC_WARNING", f"V2V WARNING — Elevated collision risk with {threat_id} (TTC: {amb.v2v_ttc:.2f}s)"):
+                        new_events.append(self.events[-1])
+                elif risk == "CRITICAL":
+                    threat_id = threat.sender_id if threat else "LEAD"
+                    if self.add_event(sim_time, EventCategory.SAFETY, "V2V_TTC_CRITICAL", f"V2V CRITICAL — High collision risk detected with {threat_id} (TTC: {amb.v2v_ttc:.2f}s)"):
+                        new_events.append(self.events[-1])
+
+            # Phase 13B: V2V Evasive Maneuver & Fallback Events
+            is_v2v_evad = getattr(amb, "is_v2v_evading", False)
+            if is_v2v_evad and not self._last_amb_v2v_evading:
+                self._last_amb_v2v_evading = True
+                threat_id = threat.sender_id if threat else (getattr(amb, "v2v_detected_vehicle_id", None) or "C-01")
+                msg = f"AMB-01 V2V EVASIVE MANEUVER: Lateral lane change initiated to avoid {threat_id} (TTC: {amb.v2v_ttc:.2f}s)"
+                if self.add_event(sim_time, EventCategory.SAFETY, "V2V_EVASIVE_MANEUVER_STARTED", msg):
+                    new_events.append(self.events[-1])
+            elif not is_v2v_evad and self._last_amb_v2v_evading:
+                self._last_amb_v2v_evading = False
+
+            is_evad_done = getattr(amb, "v2v_evasion_complete", False)
+            if is_evad_done and not self._last_amb_v2v_evasion_complete:
+                self._last_amb_v2v_evasion_complete = True
+                msg = f"AMB-01 V2V LANE CHANGE COMPLETED: Established in safe Lane 2 (x={amb.x:.0f}) — Threat avoided"
+                if self.add_event(sim_time, EventCategory.TRAFFIC, "V2V_LANE_CHANGE_COMPLETED", msg):
+                    new_events.append(self.events[-1])
+
+            is_v2v_brake = getattr(amb, "v2v_emergency_braking", False)
+            if is_v2v_brake and not self._last_amb_v2v_emergency_braking:
+                self._last_amb_v2v_emergency_braking = True
+                threat_id = threat.sender_id if threat else (getattr(amb, "v2v_detected_vehicle_id", None) or "C-01")
+                msg = f"AMB-01 V2V EMERGENCY BRAKING: Target lane blocked -> Controlled stop behind {threat_id} (TTC: {amb.v2v_ttc:.2f}s)"
+                if self.add_event(sim_time, EventCategory.SAFETY, "V2V_EMERGENCY_BRAKING", msg):
+                    new_events.append(self.events[-1])
+            elif not is_v2v_brake and self._last_amb_v2v_emergency_braking:
+                self._last_amb_v2v_emergency_braking = False
+
+        # 6. Phase 13D: AI Trajectory Prediction Events
+        if traffic_manager is not None and traffic_manager.ambulance is not None:
+            amb = traffic_manager.ambulance
+            pred = getattr(amb, "latest_ai_prediction", None)
+            if pred is not None:
+                # Prediction availability transition
+                if pred.prediction_available and not self._last_ai_available:
+                    self._last_ai_available = True
+                    msg = f"AI Trajectory Predictor online for {pred.sender_id} (Horizon: {pred.horizon_seconds:.2f}s, Infer: {pred.inference_time_ms:.1f}ms)"
+                    if self.add_event(sim_time, EventCategory.SYSTEM, "AI_PREDICTION_AVAILABLE", msg):
+                        new_events.append(self.events[-1])
+                elif not pred.prediction_available and self._last_ai_available:
+                    self._last_ai_available = False
+                    msg = f"AI Trajectory Prediction unavailable ({pred.status_message})"
+                    if self.add_event(sim_time, EventCategory.SYSTEM, "AI_PREDICTION_UNAVAILABLE", msg):
+                        new_events.append(self.events[-1])
+
+                # AI Risk State / Conflict Forecast transition
+                if pred.ai_risk_state != self._last_ai_risk:
+                    self._last_ai_risk = pred.ai_risk_state
+                    if pred.ai_risk_state == "PREDICTED_CONFLICT":
+                        msg = f"AI FORECAST: Predicted conflict with {pred.sender_id} (Clearance: {pred.predicted_min_distance:.1f}px)"
+                        if self.add_event(sim_time, EventCategory.SAFETY, "AI_PREDICTED_CONFLICT", msg):
+                            new_events.append(self.events[-1])
+                    elif pred.ai_risk_state == "PREDICTED_SAFE" and self._last_ai_available:
+                        msg = f"AI FORECAST: Corridor clear ahead of {pred.sender_id} (Clearance: {pred.predicted_min_distance:.1f}px)"
+                        if self.add_event(sim_time, EventCategory.SAFETY, "AI_PREDICTED_SAFE", msg):
+                            new_events.append(self.events[-1])
 
         return new_events
 

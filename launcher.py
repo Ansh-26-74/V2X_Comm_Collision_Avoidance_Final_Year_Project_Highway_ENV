@@ -183,15 +183,15 @@ def main() -> None:
 
     btn_v2i = ScenarioButton(
         rect=(60, 315, W - 120, 130),
-        label="V2I  Intersection Collision-Avoidance",
-        badge_text="V2I",
+        label="V2I + V2V  Integrated Smart Intersection",
+        badge_text="V2X",
         badge_col=C_BADGE_V2I,
         border_col=C_BTN_BORDER2,
         bg_col=C_BTN_V2I,
         description=[
-            "Smart Traffic Signal / RSU broadcasts collision-risk warning.",
-            "Ego receives V2I message → AI evaluates risk → automatic braking.",
-            "Cross-traffic passes safely → signal GREEN → ego resumes.",
+            "Dual-Layer V2X: Infrastructure Preemption + Vehicle-to-Vehicle Safety.",
+            "V2I: AMB-01 requests emergency preemption → RSU grants South GREEN.",
+            "V2V: Lead hazard → critical TTC → AMB-01 safe evasive lane change.",
         ],
         key_hint="[2]",
     )

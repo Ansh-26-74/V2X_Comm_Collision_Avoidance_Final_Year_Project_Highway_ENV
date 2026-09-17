@@ -611,12 +611,281 @@ def draw_ambulance(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Drawing: Phase 13B V2V Inter-Vehicle Communication & Maneuver Link
+# ─────────────────────────────────────────────────────────────────────────────
+
+def draw_v2v_inter_link(
+    screen: pygame.Surface,
+    ambulance=None,
+    civilian_vehicles=None,
+    font_small=None,
+) -> None:
+    """Render Phase 13B V2V inter-vehicle communication link, TTC warning halo, and maneuver guide."""
+    if ambulance is None or civilian_vehicles is None:
+        return
+
+    threat_id = getattr(ambulance, "v2v_detected_vehicle_id", None)
+    if not threat_id and getattr(ambulance, "latest_v2v_threat", None):
+        threat_id = ambulance.latest_v2v_threat.sender_id
+
+    if not threat_id:
+        return
+
+    threat_veh = None
+    for v in civilian_vehicles:
+        if v.vehicle_id == threat_id:
+            threat_veh = v
+            break
+
+    if threat_veh is None:
+        return
+
+    risk = getattr(ambulance, "v2v_risk_state", "NONE")
+    ttc = getattr(ambulance, "v2v_ttc", float("inf"))
+    is_evading = getattr(ambulance, "is_v2v_evading", False)
+    is_braking = getattr(ambulance, "v2v_emergency_braking", False)
+
+    if risk not in ("WARNING", "CRITICAL") and not is_evading and not is_braking:
+        return
+
+    if risk == "CRITICAL" or is_braking:
+        link_col = (255, 60, 60)
+        halo_col = (255, 50, 50, 85)
+        badge_border = (255, 80, 80)
+    elif is_evading:
+        link_col = (255, 165, 35)
+        halo_col = (255, 180, 40, 65)
+        badge_border = (255, 180, 40)
+    else:
+        link_col = (255, 215, 60)
+        halo_col = (255, 220, 60, 55)
+        badge_border = (255, 215, 60)
+
+    # 1. Pulsing threat halo around civilian vehicle C-01
+    halo_surf = pygame.Surface((70, 70), pygame.SRCALPHA)
+    pulse_r = 24 + int(4 * math.sin(_beacon_phase * 4.0))
+    pygame.draw.circle(halo_surf, halo_col, (35, 35), pulse_r)
+    pygame.draw.circle(halo_surf, (*link_col, 180), (35, 35), pulse_r, 2)
+    screen.blit(halo_surf, (int(threat_veh.x - 35), int(threat_veh.y - 35)))
+
+    # 2. V2V Wireless Link Beam between AMB-01 and C-01 (animated dashed line)
+    x1, y1 = int(ambulance.x), int(ambulance.y - ambulance.length / 2)
+    x2, y2 = int(threat_veh.x), int(threat_veh.y + threat_veh.length / 2)
+
+    dash_len = 8
+    gap_len = 5
+    tot = dash_len + gap_len
+    dist_link = math.hypot(x2 - x1, y2 - y1)
+    if dist_link > 5.0:
+        steps = int(dist_link / tot)
+        for s in range(steps):
+            frac_s = (s * tot) / dist_link
+            frac_e = min(1.0, ((s * tot) + dash_len) / dist_link)
+            sx = int(x1 + (x2 - x1) * frac_s)
+            sy = int(y1 + (y2 - y1) * frac_s)
+            ex = int(x1 + (x2 - x1) * frac_e)
+            ey = int(y1 + (y2 - y1) * frac_e)
+            pygame.draw.line(screen, link_col, (sx, sy), (ex, ey), 2)
+
+    # 3. Midpoint floating V2V badge
+    if font_small:
+        mid_x = (x1 + x2) // 2
+        mid_y = (y1 + y2) // 2
+        ttc_str = f"TTC: {ttc:.2f}s" if ttc < 99.0 else "TTC: SAFE"
+        status_tag = "CRITICAL" if risk == "CRITICAL" else ("EVADING" if is_evading else ("BRAKING" if is_braking else "WARNING"))
+        badge_txt = f"V2V: AMB-01 ↔ {threat_id} | {ttc_str} [{status_tag}]"
+        txt_surf = font_small.render(badge_txt, True, (255, 255, 255))
+        bw, bh = txt_surf.get_width() + 12, txt_surf.get_height() + 6
+        bg_surf = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        bg_surf.fill((16, 22, 36, 220))
+        pygame.draw.rect(bg_surf, badge_border, (0, 0, bw, bh), 1, border_radius=4)
+        screen.blit(bg_surf, (mid_x - bw // 2, mid_y - bh // 2))
+        screen.blit(txt_surf, (mid_x - bw // 2 + 6, mid_y - bh // 2 + 3))
+
+    # 4. If evasive maneuver is active: draw lateral transition arrow to Lane 2
+    if is_evading and font_small:
+        target_x = getattr(ambulance, "target_lane_x", 628.0)
+        arrow_y = int(ambulance.y - ambulance.length / 2 - 25)
+        pygame.draw.line(screen, (255, 175, 45), (int(ambulance.x), int(ambulance.y)), (int(target_x), arrow_y), 2)
+        pygame.draw.circle(screen, (255, 215, 60), (int(target_x), arrow_y), 4)
+        man_lbl = font_small.render("⇗ V2V EVASIVE MANEUVER -> LANE 2", True, (255, 195, 45))
+        screen.blit(man_lbl, (int(target_x + 8), arrow_y - 8))
+
+    # 5. If emergency braking fallback is active: draw braking indicator
+    if is_braking and font_small:
+        stop_line_y = int(threat_veh.y + threat_veh.length / 2 + 22.0)
+        pygame.draw.line(screen, (255, 50, 50), (int(ambulance.x - 22), stop_line_y), (int(ambulance.x + 22), stop_line_y), 3)
+        brk_lbl = font_small.render("⛔ V2V EMERGENCY BRAKING (LANE BLOCKED)", True, (255, 80, 80))
+        screen.blit(brk_lbl, (int(ambulance.x - brk_lbl.get_width() // 2), stop_line_y + 6))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Drawing: Phase 13D AI Trajectory Prediction & Conflict Visualization
+# ─────────────────────────────────────────────────────────────────────────────
+
+def draw_ai_trajectory(
+    screen: pygame.Surface,
+    ambulance=None,
+    civilian_vehicles: list | None = None,
+    font_small=None,
+    font_timer=None,
+    show_ai: bool = True,
+    traffic_manager=None,
+) -> None:
+    """Render Phase 13D AI Trajectory Prediction, 6 waypoints, and forecasted conflict region.
+    
+    Draws:
+      - Smooth dashed future trajectory line from tracked vehicle (C-01)
+      - Six discrete waypoint markers corresponding to +0.25s .. +1.50s horizons
+      - Dynamic alert coloring (vivid amber when predicted_conflict == True, cyan when safe)
+      - Pulsing conflict zone marker and forward safety corridor when conflict forecast is active
+      - Does NOT mutate any vehicle or simulation state.
+    """
+    if not show_ai:
+        return
+
+    pred = None
+    if ambulance is not None:
+        pred = getattr(ambulance, "latest_ai_prediction", None)
+    if (pred is None or not getattr(pred, "prediction_available", False)) and traffic_manager is not None:
+        pred = getattr(traffic_manager, "latest_ai_prediction", None)
+
+    if pred is None or not getattr(pred, "prediction_available", False):
+        return
+
+    waypoints = getattr(pred, "waypoints", [])
+    if not waypoints:
+        return
+
+    # Find target tracked vehicle (typically C-01)
+    target_id = getattr(pred, "sender_id", "C-01")
+    target_veh = None
+    if civilian_vehicles:
+        for v in civilian_vehicles:
+            if v.vehicle_id == target_id:
+                target_veh = v
+                break
+
+    # Determine visual styling based on genuine AI conflict prediction
+    is_conflict = getattr(pred, "predicted_conflict", False)
+    if is_conflict:
+        # Alert vivid amber/orange
+        spline_col = (255, 110, 35)
+        halo_col = (255, 90, 25, 140)
+        node_border = (255, 140, 45)
+        tag_bg = (35, 16, 12, 225)
+        status_txt = "AI PREDICTED CONFLICT"
+        status_col = (255, 125, 45)
+    else:
+        # Normal calm cyan
+        spline_col = (45, 205, 240)
+        halo_col = (30, 160, 220, 100)
+        node_border = (120, 225, 255)
+        tag_bg = (12, 24, 38, 220)
+        status_txt = "AI FORECAST: CLEAR"
+        status_col = (80, 225, 255)
+
+    # 1. Trajectory line: from C-01 front bumper through the 6 predicted waypoints
+    if target_veh is not None:
+        # C-01 moving South->North (-Y): front bumper is at y - length/2
+        start_pt = (int(target_veh.x), int(target_veh.y - target_veh.length / 2))
+    else:
+        start_pt = (int(waypoints[0].x), int(waypoints[0].y))
+
+    pts = [start_pt] + [(int(wp.x), int(wp.y)) for wp in waypoints]
+
+    # Draw dashed polyline connecting consecutive points
+    dash_len = 6
+    gap_len = 4
+    seg_step = dash_len + gap_len
+
+    for i in range(len(pts) - 1):
+        p1 = pts[i]
+        p2 = pts[i + 1]
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        dist = math.hypot(dx, dy)
+        if dist > 1.0:
+            num_dashes = max(1, int(dist / seg_step))
+            for d in range(num_dashes):
+                f_start = (d * seg_step) / dist
+                f_end = min(1.0, ((d * seg_step) + dash_len) / dist)
+                sx = int(p1[0] + dx * f_start)
+                sy = int(p1[1] + dy * f_start)
+                ex = int(p1[0] + dx * f_end)
+                ey = int(p1[1] + dy * f_end)
+                pygame.draw.line(screen, spline_col, (sx, sy), (ex, ey), 2)
+
+    # 2. Render small waypoint markers (+0.25s .. +1.50s)
+    for idx, wp in enumerate(waypoints):
+        wx, wy = int(wp.x), int(wp.y)
+        is_last = (idx == len(waypoints) - 1)
+        r_node = 5 if is_last else 3
+
+        # Glowing halo around node
+        pygame.draw.circle(screen, halo_col, (wx, wy), r_node + 3)
+        # Node circle
+        pygame.draw.circle(screen, spline_col, (wx, wy), r_node)
+        pygame.draw.circle(screen, node_border, (wx, wy), r_node, 1)
+
+        # Compact labels
+        if font_small:
+            if is_last:
+                lbl_str = f"+{wp.horizon_offset_s:.2f}s [AI HORIZON]"
+                lbl_surf = font_small.render(lbl_str, True, status_col)
+                bw, bh = lbl_surf.get_width() + 8, lbl_surf.get_height() + 4
+                bg = pygame.Surface((bw, bh), pygame.SRCALPHA)
+                bg.fill(tag_bg)
+                pygame.draw.rect(bg, node_border, (0, 0, bw, bh), 1, border_radius=3)
+                screen.blit(bg, (wx + 10, wy - bh // 2))
+                screen.blit(lbl_surf, (wx + 14, wy - bh // 2 + 2))
+            else:
+                lbl_str = f"{wp.horizon_offset_s:.2f}"
+                lbl_surf = font_small.render(lbl_str, True, (190, 210, 230))
+                screen.blit(lbl_surf, (wx + 8, wy - 6))
+
+    # 3. Conflict region visualization if predicted conflict is active
+    if is_conflict and font_small:
+        conflict_wp = waypoints[min(len(waypoints) - 1, 2)]  # ~0.75s future point
+        cx, cy = int(conflict_wp.x), int(conflict_wp.y)
+
+        # Glowing conflict ring
+        pulse_r = 14 + int(3 * math.sin(_beacon_phase * 5.0))
+        c_surf = pygame.Surface((pulse_r * 2 + 10, pulse_r * 2 + 10), pygame.SRCALPHA)
+        pygame.draw.circle(c_surf, (255, 60, 40, 90), (pulse_r + 5, pulse_r + 5), pulse_r)
+        pygame.draw.circle(c_surf, (255, 110, 35, 220), (pulse_r + 5, pulse_r + 5), pulse_r, 2)
+        # Warning diamond/X marker in center
+        pygame.draw.line(c_surf, (255, 240, 220), (pulse_r + 5 - 4, pulse_r + 5 - 4), (pulse_r + 5 + 4, pulse_r + 5 + 4), 2)
+        pygame.draw.line(c_surf, (255, 240, 220), (pulse_r + 5 - 4, pulse_r + 5 + 4), (pulse_r + 5 + 4, pulse_r + 5 - 4), 2)
+        screen.blit(c_surf, (cx - pulse_r - 5, cy - pulse_r - 5))
+
+        # Floating prediction tag (Strictly prediction-oriented wording per Step 5 Part 3)
+        tag_surf = font_small.render("⚠️ AI PREDICTED CONFLICT", True, (255, 140, 50))
+        tb_w, tb_h = tag_surf.get_width() + 10, tag_surf.get_height() + 6
+        t_bg = pygame.Surface((tb_w, tb_h), pygame.SRCALPHA)
+        t_bg.fill((25, 14, 12, 230))
+        pygame.draw.rect(t_bg, (255, 95, 35), (0, 0, tb_w, tb_h), 1, border_radius=4)
+        screen.blit(t_bg, (cx - tb_w // 2, cy - pulse_r - tb_h - 4))
+        screen.blit(tag_surf, (cx - tb_w // 2 + 5, cy - pulse_r - tb_h - 1))
+
+        # Ambulance forward safety corridor highlight
+        if ambulance is not None:
+            amb_front_y = ambulance.y - ambulance.length / 2
+            corridor_len = max(35.0, amb_front_y - cy)
+            corridor_w = 32
+            cor_surf = pygame.Surface((corridor_w, int(corridor_len)), pygame.SRCALPHA)
+            cor_surf.fill((255, 130, 40, 24))
+            pygame.draw.rect(cor_surf, (255, 140, 45, 85), (0, 0, corridor_w, int(corridor_len)), 1, border_radius=3)
+            screen.blit(cor_surf, (int(ambulance.x - corridor_w // 2), int(cy)))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Drawing: RSU / Smart Infrastructure Station
 # ─────────────────────────────────────────────────────────────────────────────
 
-RSU_X = CX + HALF_ROAD + 110
-RSU_Y = CY - HALF_ROAD - 95
-RSU_POS = (RSU_X, RSU_Y)
+RSU_X = 730
+RSU_Y = 285
+RSU_POS = (float(RSU_X), float(RSU_Y))
 
 
 def draw_rsu_station(screen: pygame.Surface, font_small) -> None:
@@ -852,8 +1121,18 @@ def draw_vehicle_conflict_highlights(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Drawing: HUD & Telemetry Panels
+# Drawing: HUD & Telemetry Panels (Layout-Contained & Bounded)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def fit_text_to_width(font, text: str, max_w: int) -> str:
+    """Safely truncate text with ellipsis if its rendered width exceeds max_w in pixels."""
+    if not text or font.size(text)[0] <= max_w:
+        return text
+    truncated = text
+    while len(truncated) > 3 and font.size(truncated + "..")[0] > max_w:
+        truncated = truncated[:-1]
+    return truncated + ".."
+
 
 def draw_event_timeline(
     screen: pygame.Surface,
@@ -865,30 +1144,60 @@ def draw_event_timeline(
     py: int,
     panel_w: int,
     panel_h: int,
+    traffic_manager=None,
 ) -> None:
-    """Render the Phase 9 chronological event timeline audit log."""
+    """Render the Phase 9 chronological event timeline audit log with Phase 13D AI metrics."""
     p_surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
     p_surf.fill(C_PANEL_BG)
     screen.blit(p_surf, (px, py))
     pygame.draw.rect(screen, C_PANEL_BORDER, (px, py, panel_w, panel_h), 2, border_radius=8)
 
-    # Header
-    title = font_bold.render("V2I EVENT TIMELINE (AUDIT LOG)", True, (255, 195, 60))
-    screen.blit(title, (px + 14, py + 10))
-    pygame.draw.line(screen, C_PANEL_BORDER, (px + 10, py + 30), (px + panel_w - 10, py + 30), 1)
+    # Header with title & lead badge
+    lead_time = None
+    if traffic_manager and hasattr(traffic_manager, "safety_fusion") and traffic_manager.safety_fusion:
+        lead_time = getattr(traffic_manager.safety_fusion, "ai_lead_time", None)
+
+    lead_w = 0
+    if lead_time is not None and lead_time > 0.0:
+        lead_badge = font_small.render(f"AI LEAD: +{lead_time:.2f}s", True, (80, 240, 140))
+        lead_w = lead_badge.get_width()
+        screen.blit(lead_badge, (px + panel_w - lead_w - 12, py + 9))
+
+    title_max_w = panel_w - lead_w - 28
+    title_text = "V2I/V2V EVENT TIMELINE (AUDIT LOG)"
+    if font_bold.size(title_text)[0] > title_max_w:
+        title_text = "EVENT TIMELINE (AUDIT)"
+    title = font_bold.render(fit_text_to_width(font_bold, title_text, title_max_w), True, (255, 195, 60))
+    screen.blit(title, (px + 12, py + 8))
+
+    pygame.draw.line(screen, C_PANEL_BORDER, (px + 8, py + 27), (px + panel_w - 8, py + 27), 1)
 
     events = event_logger.get_events() if event_logger else []
     if not events:
-        screen.blit(font_normal.render("Awaiting system state transitions...", True, C_TEXT_DIM), (px + 14, py + 42))
+        screen.blit(font_normal.render("Awaiting system state transitions...", True, C_TEXT_DIM), (px + 12, py + 38))
         return
 
-    # Render recent events (newest at bottom, showing up to 8-9 visible events)
-    visible_events = events[-9:]
+    # Dynamic row allocation based on available height inside panel
+    title_h = 30
+    bottom_pad = 6
+    avail_h = panel_h - title_h - bottom_pad
+    row_h = 18
+    max_events = max(1, avail_h // row_h)
+    visible_events = events[-max_events:]
+
+    # Clip boundary to strictly protect panel borders
+    prev_clip = screen.get_clip()
+    screen.set_clip(pygame.Rect(px + 2, py + 28, panel_w - 4, panel_h - 30))
+
+    msg_max_w = panel_w - 106
     for i, evt in enumerate(visible_events):
-        ey = py + 34 + i * 19
+        ey = py + 31 + i * row_h
 
         # Category tag and color mapping
-        if evt.category == EventCategory.COMMUNICATION:
+        if "AI" in evt.event_type or evt.category == EventCategory.SYSTEM:
+            cat_col = (180, 140, 255)
+            badge = "AI  "
+        elif evt.category == EventCategory.COMMUNICATION:
             cat_col = (80, 215, 255)
             badge = "COMM"
         elif evt.category == EventCategory.EMERGENCY:
@@ -906,21 +1215,361 @@ def draw_event_timeline(
 
         # Timestamp
         ts_str = f"{evt.timestamp:04.1f}s"
-        screen.blit(font_small.render(ts_str, True, (160, 175, 195)), (px + 12, ey))
+        screen.blit(font_small.render(ts_str, True, (160, 175, 195)), (px + 10, ey))
 
         # Category badge
         badge_surf = font_small.render(f"[{badge}]", True, cat_col)
-        screen.blit(badge_surf, (px + 56, ey))
+        screen.blit(badge_surf, (px + 52, ey))
 
-        # Message (truncated if exceeding panel width)
-        msg_str = evt.message
-        max_w = panel_w - 112
-        if font_small.size(msg_str)[0] > max_w:
-            while len(msg_str) > 5 and font_small.size(msg_str + "..")[0] > max_w:
-                msg_str = msg_str[:-2]
-            msg_str += ".."
+        # Message (strictly truncated to never escape card)
+        msg_str = fit_text_to_width(font_small, evt.message, msg_max_w)
+        screen.blit(font_small.render(msg_str, True, (230, 235, 245)), (px + 98, ey))
 
-        screen.blit(font_small.render(msg_str, True, (230, 235, 245)), (px + 102, ey))
+    screen.set_clip(prev_clip)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Drawing: Phase 13D AI & Safety Fusion HUD Cards
+# ─────────────────────────────────────────────────────────────────────────────
+
+def draw_ai_hud_card(
+    screen: pygame.Surface,
+    traffic_manager,
+    font_bold,
+    font_normal,
+    font_small,
+    px: int = 16,
+    py: int = 54,
+    panel_w: int = 370,
+    panel_h: int = 132,
+) -> None:
+    """Render Phase 13D dedicated AI Trajectory Prediction HUD Card."""
+    surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    surf.fill(C_PANEL_BG)
+    screen.blit(surf, (px, py))
+    pygame.draw.rect(screen, (70, 110, 180), (px, py, panel_w, panel_h), 2, border_radius=8)
+
+    amb = getattr(traffic_manager, "ambulance", None) if traffic_manager else None
+    pred = getattr(amb, "latest_ai_prediction", None) if amb else None
+    if pred is None and traffic_manager:
+        pred = getattr(traffic_manager, "latest_ai_prediction", None)
+    predictor = getattr(traffic_manager, "ai_predictor", None) if traffic_manager else None
+
+    # Tracked vehicle ID
+    v2v_threat_id = getattr(amb, "v2v_detected_vehicle_id", None) if amb else None
+    if not v2v_threat_id and amb and getattr(amb, "latest_v2v_threat", None):
+        v2v_threat_id = amb.latest_v2v_threat.sender_id
+    tracked_veh = getattr(pred, "sender_id", None) or v2v_threat_id or "C-01"
+
+    # History sample count
+    history_count = 0
+    if predictor and hasattr(predictor, "history_buffers"):
+        history_count = len(predictor.history_buffers.get(tracked_veh, []))
+
+    pred_available = getattr(pred, "prediction_available", False) if pred else False
+    is_conflict = getattr(pred, "predicted_conflict", False) if pred else False
+    ai_loading = getattr(traffic_manager, "ai_loading", False) if traffic_manager else False
+
+    if predictor is None and ai_loading:
+        status_txt = "INITIALIZING"
+        status_badge = "INIT"
+        status_col = (255, 215, 60)
+        pred_txt = "INITIALIZING (PyTorch)"
+        pred_col = (255, 215, 60)
+        risk_txt = "INITIALIZING (PyTorch MLP)"
+        risk_col = (255, 215, 60)
+        clr_str = "N/A"
+        inf_str = "N/A"
+    elif predictor is None:
+        err_msg = getattr(traffic_manager, "ai_error", None)
+        status_txt = "UNAVAILABLE"
+        status_badge = "UNAVAIL"
+        status_col = (180, 190, 205)
+        pred_txt = f"UNAVAILABLE ({err_msg[:12]})" if err_msg else "UNAVAILABLE"
+        pred_col = (180, 190, 205)
+        risk_txt = "UNAVAILABLE (DETERMINISTIC V2V)"
+        risk_col = (255, 215, 60)
+        clr_str = "N/A"
+        inf_str = "N/A"
+    elif not pred_available:
+        status_txt = f"COLLECTING DATA ({history_count}/5)"
+        status_badge = f"{history_count}/5 PKTS"
+        status_col = (255, 215, 60)
+        pred_txt = f"AWAITING TELEMETRY ({history_count}/5)"
+        pred_col = (255, 215, 60)
+        risk_txt = "AWAITING TELEMETRY (3-5 PKTS)"
+        risk_col = C_TEXT_DIM
+        clr_str = "N/A"
+        inf_str = "N/A"
+    elif is_conflict:
+        status_txt = "ACTIVE"
+        status_badge = "ACTIVE"
+        status_col = (60, 225, 130)
+        pred_txt = "PREDICTED CONFLICT"
+        pred_col = (255, 110, 35)
+        risk_txt = "PREDICTED CONFLICT"
+        risk_col = (255, 110, 35)
+        clr_str = f"{pred.predicted_min_distance:.1f} px"
+        inf_str = f"{pred.inference_time_ms:.2f} ms"
+    else:
+        status_txt = "ACTIVE"
+        status_badge = "ACTIVE"
+        status_col = (60, 225, 130)
+        pred_txt = "PREDICTED CLEAR / SAFE"
+        pred_col = (60, 225, 130)
+        risk_txt = "PREDICTED SAFE"
+        risk_col = (60, 225, 130)
+        clr_str = f"{pred.predicted_min_distance:.1f} px" if pred.predicted_min_distance < 999.0 else "CLEAR"
+        inf_str = f"{pred.inference_time_ms:.2f} ms"
+
+    # Header
+    title_surf = font_bold.render("AI TRAJECTORY PREDICTION", True, (90, 205, 255))
+    screen.blit(title_surf, (px + 12, py + 7))
+    badge_surf = font_small.render(f"[{status_badge}]", True, status_col)
+    screen.blit(badge_surf, (px + panel_w - badge_surf.get_width() - 12, py + 8))
+    pygame.draw.line(screen, (55, 85, 140), (px + 8, py + 26), (px + panel_w - 8, py + 26), 1)
+
+    # Content lines safely bound inside card
+    val_x = px + 126
+    val_max_w = panel_w - 138
+
+    lines = [
+        ("Tracked Vehicle :", f"{tracked_veh} (V2V Telemetry)", (230, 235, 245), False),
+        ("Prediction State:", pred_txt, pred_col, True),
+        ("Forecast Horizon:", "1.50s (6 waypoints @ 10 Hz)", (200, 215, 235), False),
+        ("AI Risk State   :", risk_txt, risk_col, True),
+        ("Min Clearance   :", clr_str, (255, 215, 60) if is_conflict else (200, 215, 235), False),
+        ("Inference Lat.  :", f"{inf_str} | PyTorch MLP", (160, 230, 200) if pred_available else C_TEXT_DIM, False),
+    ]
+
+    prev_clip = screen.get_clip()
+    screen.set_clip(pygame.Rect(px + 2, py + 27, panel_w - 4, panel_h - 29))
+
+    avail_h = panel_h - 32 - 4
+    row_h = min(16, avail_h // 6)
+    for i, (lbl, val, col, is_bold) in enumerate(lines):
+        ly = py + 29 + i * row_h
+        screen.blit(font_small.render(lbl, True, C_TEXT_DIM), (px + 12, ly))
+        val_fitted = fit_text_to_width(font_bold if is_bold else font_small, val, val_max_w)
+        screen.blit(font_bold.render(val_fitted, True, col) if is_bold else font_small.render(val_fitted, True, col), (val_x, ly))
+
+    screen.set_clip(prev_clip)
+
+
+def draw_safety_fusion_hud_card(
+    screen: pygame.Surface,
+    traffic_manager,
+    font_bold,
+    font_normal,
+    font_small,
+    px: int = 16,
+    py: int = 190,
+    panel_w: int = 370,
+    panel_h: int = 152,
+) -> None:
+    """Render Phase 13D Safety Fusion & AI/TTC Distinction HUD Card."""
+    surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+    surf.fill(C_PANEL_BG)
+    screen.blit(surf, (px, py))
+
+    amb = getattr(traffic_manager, "ambulance", None) if traffic_manager else None
+    fusion = getattr(amb, "latest_safety_fusion", None) if amb else None
+    fusion_engine = getattr(traffic_manager, "safety_fusion", None) if traffic_manager else None
+
+    # Determine border and highlight color from fused state
+    fused_state = getattr(fusion, "fused_risk_state", "SAFE") if fusion else "SAFE"
+    if fused_state == "CRITICAL":
+        border_col = (255, 75, 75)
+        badge_col = (255, 65, 65)
+        badge_text = "CRITICAL"
+    elif fused_state == "ELEVATED_WARNING":
+        border_col = (255, 160, 40)
+        badge_col = (255, 175, 45)
+        badge_text = "ELEVATED"
+    elif fused_state == "WARNING":
+        border_col = (255, 215, 60)
+        badge_col = (255, 215, 60)
+        badge_text = "WARNING"
+    elif fused_state == "ADVISORY_MONITORING":
+        border_col = (80, 180, 240)
+        badge_col = (80, 200, 255)
+        badge_text = "ADVISORY"
+    else:
+        border_col = (60, 140, 95)
+        badge_col = (60, 225, 130)
+        badge_text = "SAFE"
+
+    pygame.draw.rect(screen, border_col, (px, py, panel_w, panel_h), 2, border_radius=8)
+
+    # Header
+    title_surf = font_bold.render("SAFETY FUSION (ARBITRATION)", True, (240, 200, 110))
+    screen.blit(title_surf, (px + 12, py + 6))
+    badge_surf = font_small.render(f"[{badge_text}]", True, badge_col)
+    screen.blit(badge_surf, (px + panel_w - badge_surf.get_width() - 12, py + 7))
+    pygame.draw.line(screen, (55, 85, 140), (px + 8, py + 24), (px + panel_w - 8, py + 24), 1)
+
+    # Content extraction
+    ai_risk = getattr(fusion, "ai_risk_state", "SAFE") if fusion else "STANDBY"
+    ttc_val = getattr(fusion, "ttc", float("inf")) if fusion else float("inf")
+    ttc_risk = getattr(fusion, "ttc_risk_state", "NONE") if fusion else "NONE"
+    clr_val = getattr(fusion, "deterministic_clearance", 0.0) if fusion else 0.0
+    lane2_ok = getattr(fusion, "target_lane_safe", True) if fusion else True
+    action = getattr(fusion, "recommended_action", "SAFE_CRUISE") if fusion else "SAFE_CRUISE"
+    raw_reason = getattr(fusion, "decision_reason", "BASELINE_SAFE") if fusion else "INITIALIZING"
+
+    # Compact decision reason mapping
+    reason_map = {
+        "AI_CONFLICT_WITH_TTC_WARNING": "AI CONFLICT + TTC WARN",
+        "BLOCKED_LANE_OVERRIDE": "BLOCKED LANE OVERRIDE",
+        "CONFLICT_ZONE_OVERRIDE": "CONFLICT ZONE OVERRIDE",
+        "TTC_CRITICAL_OVERRIDE": "TTC CRITICAL OVERRIDE",
+        "BASELINE_SAFE": "BASELINE SAFE",
+        "AI_CONFLICT_MONITORING": "AI CONFLICT MONITOR",
+        "TTC_CRITICAL": "TTC CRITICAL",
+    }
+    reason = reason_map.get(raw_reason, raw_reason.replace("_", " "))
+
+    # Lead time
+    lead_time = getattr(fusion_engine, "ai_lead_time", None) if fusion_engine else None
+    if lead_time is not None and lead_time > 0.0:
+        lead_str = f"+{lead_time:.2f}s before TTC"
+        lead_col = (80, 240, 140)
+    else:
+        lead_str = "N/A"
+        lead_col = C_TEXT_DIM
+
+    ttc_str = f"{ttc_val:.2f}s ({ttc_risk})" if ttc_val < 99.0 else "SAFE (>4.0s)"
+    lane_str = "SAFE" if lane2_ok else "BLOCKED"
+
+    val_x = px + 126
+    val_max_w = panel_w - 138
+
+    lines = [
+        ("AI Risk Forecast:", ai_risk.replace("_", " "), (255, 110, 35) if "CONFLICT" in ai_risk else (60, 225, 130), False),
+        ("Kinematic TTC    :", ttc_str, (255, 75, 75) if ttc_risk == "CRITICAL" else ((255, 215, 60) if ttc_risk == "WARNING" else (60, 225, 130)), False),
+        ("Clearance / L2   :", f"{clr_val:.1f} px | Lane 2: {lane_str}", (230, 235, 245), False),
+        ("FUSED RISK STATE :", fused_state, badge_col, True),
+        ("RECOMMENDED ACT  :", action.replace("_", " "), (255, 195, 45) if "EVASIVE" in action else (60, 225, 130), True),
+        ("DECISION REASON  :", reason, (200, 215, 235), False),
+        ("AI Early Warning :", lead_str, lead_col, False),
+    ]
+
+    prev_clip = screen.get_clip()
+    screen.set_clip(pygame.Rect(px + 2, py + 25, panel_w - 4, panel_h - 43))
+
+    avail_h = panel_h - 26 - 19
+    row_h = min(15, avail_h // 7)
+    for i, (lbl, val, col, is_bold) in enumerate(lines):
+        ly = py + 26 + i * row_h
+        screen.blit(font_small.render(lbl, True, C_TEXT_DIM), (px + 12, ly))
+        val_fitted = fit_text_to_width(font_bold if is_bold else font_small, val, val_max_w)
+        screen.blit(font_bold.render(val_fitted, True, col) if is_bold else font_small.render(val_fitted, True, col), (val_x, ly))
+
+    screen.set_clip(prev_clip)
+
+    # Explanatory footer banner safely positioned
+    foot_y = py + panel_h - 17
+    pygame.draw.line(screen, (45, 65, 95), (px + 8, foot_y - 2), (px + panel_w - 8, foot_y - 2), 1)
+    foot_txt = "AI: ADVISORY FORECAST | TTC: AUTHORITATIVE SAFETY"
+    foot_fitted = fit_text_to_width(font_small, foot_txt, panel_w - 16)
+    foot_surf = font_small.render(foot_fitted, True, (120, 185, 235))
+    screen.blit(foot_surf, (px + (panel_w - foot_surf.get_width()) // 2, foot_y))
+
+
+def draw_rsu_combined_panel(
+    screen: pygame.Surface,
+    signal_controller,
+    v2i_channel,
+    traffic_manager,
+    font_bold,
+    font_normal,
+    font_small,
+    v_px: int = 16,
+    v_py: int = 458,
+    v_panel_w: int = 370,
+    v_panel_h: int = 224,
+) -> None:
+    """Render combined Bottom-Left RSU Infrastructure and V2X Communication panel."""
+    v_surf = pygame.Surface((v_panel_w, v_panel_h), pygame.SRCALPHA)
+    v_surf.fill(C_PANEL_BG)
+    screen.blit(v_surf, (v_px, v_py))
+    pygame.draw.rect(screen, C_PANEL_BORDER, (v_px, v_py, v_panel_w, v_panel_h), 2, border_radius=8)
+
+    v2i_title = font_bold.render("SMART INTERSECTION & V2X LINK", True, (80, 215, 255))
+    screen.blit(v2i_title, (v_px + 12, v_py + 6))
+    pygame.draw.line(screen, C_PANEL_BORDER, (v_px + 8, v_py + 25), (v_px + v_panel_w - 8, v_py + 25), 1)
+
+    # Signal status
+    curr_phase = signal_controller.current_phase
+    phase_name = curr_phase.value.replace("_", " ")
+    time_left = signal_controller.time_remaining
+    total_dur = signal_controller.phase_duration
+
+    if curr_phase == CyclePhase.EMERGENCY_SOUTH_GREEN:
+        preempt_badge = "ACTIVE (SOUTH GREEN)"
+        preempt_col = (60, 220, 120)
+    elif curr_phase == CyclePhase.EMERGENCY_TERMINATING:
+        preempt_badge = "TERMINATING (YELLOW)"
+        preempt_col = (255, 215, 60)
+    elif curr_phase in (CyclePhase.RECOVERY_ALL_RED, CyclePhase.PREEMPTION_ALL_RED):
+        preempt_badge = "ALL-RED CLEARANCE"
+        preempt_col = (255, 80, 80)
+    else:
+        preempt_badge = "NORMAL TIMED CYCLE"
+        preempt_col = C_TEXT_DIM
+
+    comm_st = v2i_channel.comm_state if v2i_channel else "OFFLINE"
+    st_col = (60, 220, 120) if comm_st in ("DELIVERED", "IN_RANGE", "TRANSMITTED") else (
+        (255, 215, 60) if comm_st == "OUT_OF_RANGE" else (255, 80, 80)
+    )
+
+    req_received = signal_controller.emergency_request_received
+    latest_req = signal_controller.latest_emergency_request
+    if latest_req:
+        info_str = f"ETA: {latest_req.get('eta', 0.0):.1f}s | Pri: {latest_req.get('priority', 'HIGH')}"
+    else:
+        info_str = "No payload buffered"
+
+    amb = traffic_manager.ambulance if traffic_manager else None
+    v2v_threat_id = getattr(amb, "v2v_detected_vehicle_id", None) if amb else None
+    if not v2v_threat_id and amb and getattr(amb, "latest_v2v_threat", None):
+        v2v_threat_id = amb.latest_v2v_threat.sender_id
+    v2v_peer = v2v_threat_id or "C-01"
+
+    val_x = v_px + 126
+    val_max_w = v_panel_w - 138
+
+    lines = [
+        ("Intersection ID :", f"{signal_controller.intersection_id} | Preempt: {preempt_badge}", preempt_col, True),
+        ("Signal Phase    :", f"{phase_name} ({time_left:04.1f}s/{total_dur:04.1f}s)", (240, 240, 240), False),
+        ("Safety Mutex    :", "✓ MUTEX ENFORCED (NO CONFLICT GREEN)", (60, 225, 130), True),
+        ("V2I Comm State  :", f"{comm_st} | RSU Range: 400px", st_col, False),
+        ("RSU Packets     :", f"TX: {v2i_channel.packets_sent if v2i_channel else 0} | RX: {v2i_channel.packets_delivered if v2i_channel else 0} | Drop: {v2i_channel.packets_dropped if v2i_channel else 0}", (200, 210, 230), False),
+        ("RSU Reception   :", "RECEIVED & BUFFERED" if req_received else "AWAITING IN-RANGE TX", (60, 220, 120) if req_received else C_TEXT_DIM, False),
+        ("V2I Payload     :", info_str, (255, 235, 100) if latest_req else C_TEXT_DIM, False),
+        ("V2V Peer Link   :", f"AMB-01 ↔ {v2v_peer} (10 Hz DSRC / 200px)", (120, 210, 255), False),
+    ]
+
+    prev_clip = screen.get_clip()
+    screen.set_clip(pygame.Rect(v_px + 2, v_py + 26, v_panel_w - 4, v_panel_h - 66))
+
+    row_h = 17
+    for i, (lbl, val, col, is_bold) in enumerate(lines):
+        ly = v_py + 28 + i * row_h
+        screen.blit(font_small.render(lbl, True, C_TEXT_DIM), (v_px + 12, ly))
+        val_fitted = fit_text_to_width(font_bold if is_bold else font_small, val, val_max_w)
+        screen.blit(font_bold.render(val_fitted, True, col) if is_bold else font_small.render(val_fitted, True, col), (val_x, ly))
+
+    screen.set_clip(prev_clip)
+
+    # Footer banner
+    foot_div_y = v_py + v_panel_h - 40
+    pygame.draw.line(screen, C_PANEL_BORDER, (v_px + 8, foot_div_y), (v_px + v_panel_w - 8, foot_div_y), 1)
+    phase9_chain_badge = "V2I: RSU Preemption  |  V2V: Collision Avoidance"
+    b_fitted = fit_text_to_width(font_small, phase9_chain_badge, v_panel_w - 24)
+    screen.blit(font_small.render(b_fitted, True, (80, 215, 255)), (v_px + 12, foot_div_y + 4))
+    sub_fitted = fit_text_to_width(font_normal, "Integrated Dual-Layer Connected Vehicle System", v_panel_w - 24)
+    screen.blit(font_normal.render(sub_fitted, True, C_TEXT_DIM), (v_px + 12, foot_div_y + 18))
 
 
 def draw_hud(
@@ -935,175 +1584,286 @@ def draw_hud(
     v2i_channel=None,
     event_logger=None,
     font_small=None,
+    show_ai: bool = True,
 ) -> None:
     """Draw the smart intersection controller HUD and telemetry panels."""
     w, h = screen.get_size()
     if font_small is None:
         font_small = pygame.font.SysFont("consolas", 12, bold=True)
 
-    # 1. Top Title Banner
-    title_surf = pygame.Surface((w - 40, 40), pygame.SRCALPHA)
-    title_surf.fill(C_PANEL_BG)
-    screen.blit(title_surf, (20, 10))
-    pygame.draw.rect(screen, C_PANEL_BORDER, (20, 10, w - 40, 40), 1, border_radius=6)
+    # Standard layout margins and dimensions
+    margin_x = 16
+    panel_w = 370
+    rx = w - panel_w - margin_x
+    px = margin_x
 
-    title_text = font_title.render("V2I SMART INTERSECTION — OBSERVABILITY & EVENT TIMELINE (PHASE 9)", True, C_TITLE)
-    screen.blit(title_text, (35, 18))
+    # 1. Top Title Banner
+    banner_h = 38
+    title_surf = pygame.Surface((w - 2 * margin_x, banner_h), pygame.SRCALPHA)
+    title_surf.fill(C_PANEL_BG)
+    screen.blit(title_surf, (margin_x, 8))
+    pygame.draw.rect(screen, C_PANEL_BORDER, (margin_x, 8, w - 2 * margin_x, banner_h), 1, border_radius=6)
+
+    title_text = "INTEGRATED V2X SMART INTERSECTION — V2I PREEMPTION & V2V AVOIDANCE (PHASE 13)"
+    title_max_w = w - 2 * margin_x - 240
+    title_fitted = fit_text_to_width(font_title, title_text, title_max_w)
+    title_render = font_title.render(title_fitted, True, C_TITLE)
+    screen.blit(title_render, (margin_x + 14, 16))
 
     pause_badge = " [PAUSED]" if paused else " [RUNNING]"
     time_text = font_bold.render(f"SIM TIME: {sim_time:05.1f}s {pause_badge}", True, (255, 215, 60) if paused else (60, 220, 120))
-    screen.blit(time_text, (w - time_text.get_width() - 35, 19))
+    screen.blit(time_text, (w - margin_x - time_text.get_width() - 14, 17))
 
-    # 2. Left Top Panel: RSU Traffic Signal Controller Status
-    panel_w, panel_h = 360, 275
-    px, py = 20, 55
+    # Controls bar at bottom
+    controls_h = 28
+    controls_y = h - controls_h - 6
+    bottom_gap = 6
+    bot_panel_h = 224
+    bot_panel_y = controls_y - bottom_gap - bot_panel_h
 
-    p_surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
-    p_surf.fill(C_PANEL_BG)
-    screen.blit(p_surf, (px, py))
-    pygame.draw.rect(screen, C_PANEL_BORDER, (px, py, panel_w, panel_h), 2, border_radius=8)
+    # 2 & 3. Left Side Panels (Dual AI & Safety Fusion Cards vs Classic RSU)
+    if show_ai:
+        # Upper Left: Dedicated AI Trajectory Prediction HUD Card
+        draw_ai_hud_card(
+            screen=screen,
+            traffic_manager=traffic_manager,
+            font_bold=font_bold,
+            font_normal=font_normal,
+            font_small=font_small,
+            px=px,
+            py=52,
+            panel_w=panel_w,
+            panel_h=132,
+        )
 
-    # Panel Title
-    rsu_title = font_bold.render("SMART INTERSECTION / RSU-01", True, C_TITLE)
-    screen.blit(rsu_title, (px + 14, py + 12))
-    pygame.draw.line(screen, C_PANEL_BORDER, (px + 10, py + 34), (px + panel_w - 10, py + 34), 1)
+        # Mid Left: Dedicated Safety Fusion & AI/TTC Distinction Card
+        draw_safety_fusion_hud_card(
+            screen=screen,
+            traffic_manager=traffic_manager,
+            font_bold=font_bold,
+            font_normal=font_normal,
+            font_small=font_small,
+            px=px,
+            py=188,
+            panel_w=panel_w,
+            panel_h=152,
+        )
 
-    # Phase info
-    curr_phase = signal_controller.current_phase
-    phase_name = curr_phase.value.replace("_", " ")
-    time_left = signal_controller.time_remaining
-    total_dur = signal_controller.phase_duration
-
-    # Preemption status determination
-    if curr_phase == CyclePhase.EMERGENCY_SOUTH_GREEN:
-        preempt_badge = "ACTIVE (SOUTH GREEN)"
-        preempt_col = (60, 220, 120)
-        mode_str = "Mode: EMERGENCY PREEMPTION (SOUTH PRIORITY)"
-    elif curr_phase == CyclePhase.EMERGENCY_TERMINATING:
-        preempt_badge = "TERMINATING (SOUTH YELLOW)"
-        preempt_col = (255, 215, 60)
-        mode_str = "Mode: EMERGENCY TERMINATING (YELLOW CLEARANCE)"
-    elif curr_phase == CyclePhase.RECOVERY_ALL_RED:
-        preempt_badge = "ALL-RED CLEARANCE"
-        preempt_col = (255, 80, 80)
-        mode_str = "Mode: POST-EMERGENCY ALL-RED CLEARANCE"
-    elif curr_phase == CyclePhase.PREEMPTION_ALL_RED:
-        preempt_badge = "ALL-RED CLEARANCE"
-        preempt_col = (255, 80, 80)
-        mode_str = "Mode: ALL-RED SAFETY GATE CLEARANCE"
-    elif curr_phase == CyclePhase.PREEMPTION_YELLOW:
-        preempt_badge = "CLEARING (YELLOW)"
-        preempt_col = (255, 215, 60)
-        mode_str = "Mode: PREEMPTION YELLOW CLEARANCE"
-    elif getattr(signal_controller, "preemption_requested", False):
-        preempt_badge = "REQUESTED"
-        preempt_col = (255, 215, 60)
-        mode_str = "Mode: PREEMPTION REQUESTED (QUEUED)"
+        # Bottom Left: Combined RSU Infrastructure & V2X Link
+        draw_rsu_combined_panel(
+            screen=screen,
+            signal_controller=signal_controller,
+            v2i_channel=v2i_channel,
+            traffic_manager=traffic_manager,
+            font_bold=font_bold,
+            font_normal=font_normal,
+            font_small=font_small,
+            v_px=px,
+            v_py=bot_panel_y,
+            v_panel_w=panel_w,
+            v_panel_h=bot_panel_h,
+        )
     else:
-        preempt_badge = "NORMAL OPERATION"
-        preempt_col = C_TEXT_DIM
-        mode_str = "Mode: NORMAL TIMED CYCLE (COORDINATED)"
+        # Classic RSU Controller Panel (when AI toggle is OFF)
+        c_panel_h = 250
+        p_surf = pygame.Surface((panel_w, c_panel_h), pygame.SRCALPHA)
+        p_surf.fill(C_PANEL_BG)
+        screen.blit(p_surf, (px, 52))
+        pygame.draw.rect(screen, C_PANEL_BORDER, (px, 52, panel_w, c_panel_h), 2, border_radius=8)
 
-    priority_status = getattr(signal_controller, "rsu_priority_status", "INACTIVE")
-    priority_col = (60, 220, 120) if priority_status == "ACTIVE" else (
-        (255, 215, 60) if priority_status == "TERMINATING" else C_TEXT_DIM
-    )
+        rsu_title = font_bold.render("SMART INTERSECTION / RSU-01", True, C_TITLE)
+        screen.blit(rsu_title, (px + 12, 52 + 8))
+        pygame.draw.line(screen, C_PANEL_BORDER, (px + 8, 52 + 28), (px + panel_w - 8, 52 + 28), 1)
 
-    lines = [
-        ("Intersection ID :", signal_controller.intersection_id, C_TEXT_NORMAL),
-        ("Preemption State:", preempt_badge, preempt_col),
-        ("Emergency Priority:", priority_status, priority_col),
-        ("Current Phase   :", phase_name, (255, 215, 60) if "YELLOW" in phase_name else ((60, 220, 120) if "GREEN" in phase_name else (255, 80, 80))),
-        ("Phase Timer     :", f"{time_left:04.1f}s / {total_dur:04.1f}s", (240, 240, 240)),
-        ("Cycle Count     :", f"Cycle #{signal_controller.cycle_count}", C_TEXT_DIM),
-    ]
+        curr_phase = signal_controller.current_phase
+        phase_name = curr_phase.value.replace("_", " ")
+        time_left = signal_controller.time_remaining
+        total_dur = signal_controller.phase_duration
 
-    for i, (label, val, col) in enumerate(lines):
-        ly = py + 40 + i * 21
-        screen.blit(font_normal.render(label, True, C_TEXT_DIM), (px + 14, ly))
-        screen.blit(font_bold.render(val, True, col), (px + 160, ly))
+        if curr_phase == CyclePhase.EMERGENCY_SOUTH_GREEN:
+            preempt_badge = "ACTIVE (SOUTH GREEN)"
+            preempt_col = (60, 220, 120)
+            mode_str = "Mode: EMERGENCY PREEMPTION (SOUTH PRIORITY)"
+        elif curr_phase == CyclePhase.EMERGENCY_TERMINATING:
+            preempt_badge = "TERMINATING (SOUTH YELLOW)"
+            preempt_col = (255, 215, 60)
+            mode_str = "Mode: EMERGENCY TERMINATING (YELLOW CLEARANCE)"
+        elif curr_phase in (CyclePhase.RECOVERY_ALL_RED, CyclePhase.PREEMPTION_ALL_RED):
+            preempt_badge = "ALL-RED CLEARANCE"
+            preempt_col = (255, 80, 80)
+            mode_str = "Mode: ALL-RED SAFETY GATE CLEARANCE"
+        elif curr_phase == CyclePhase.PREEMPTION_YELLOW:
+            preempt_badge = "CLEARING (YELLOW)"
+            preempt_col = (255, 215, 60)
+            mode_str = "Mode: PREEMPTION YELLOW CLEARANCE"
+        elif getattr(signal_controller, "preemption_requested", False):
+            preempt_badge = "REQUESTED"
+            preempt_col = (255, 215, 60)
+            mode_str = "Mode: PREEMPTION REQUESTED (QUEUED)"
+        else:
+            preempt_badge = "NORMAL OPERATION"
+            preempt_col = C_TEXT_DIM
+            mode_str = "Mode: NORMAL TIMED CYCLE (COORDINATED)"
 
-    # Progress bar for active phase
-    progress = 1.0 - (time_left / max(total_dur, 0.1))
-    bar_x, bar_y, bar_w, bar_h = px + 14, py + 172, panel_w - 28, 10
-    pygame.draw.rect(screen, (30, 40, 55), (bar_x, bar_y, bar_w, bar_h), border_radius=5)
-    bar_fill_col = (255, 210, 40) if "YELLOW" in phase_name else (60, 220, 120)
-    pygame.draw.rect(screen, bar_fill_col, (bar_x, bar_y, int(bar_w * progress), bar_h), border_radius=5)
-    pygame.draw.rect(screen, C_PANEL_BORDER, (bar_x, bar_y, bar_w, bar_h), 1, border_radius=5)
+        priority_status = getattr(signal_controller, "rsu_priority_status", "INACTIVE")
+        priority_col = (60, 220, 120) if priority_status == "ACTIVE" else (
+            (255, 215, 60) if priority_status == "TERMINATING" else C_TEXT_DIM
+        )
 
-    # Safety Invariant Status badge
-    safe_badge = "✓ MUTEX ENFORCED (NO CONFLICTING GREEN)"
-    safe_surf = font_normal.render(safe_badge, True, (60, 225, 130))
-    screen.blit(safe_surf, (px + 14, py + 196))
+        lines = [
+            ("Intersection ID :", signal_controller.intersection_id, C_TEXT_NORMAL),
+            ("Preemption State:", preempt_badge, preempt_col),
+            ("Emergency Priority:", priority_status, priority_col),
+            ("Current Phase   :", phase_name, (255, 215, 60) if "YELLOW" in phase_name else ((60, 220, 120) if "GREEN" in phase_name else (255, 80, 80))),
+            ("Phase Timer     :", f"{time_left:04.1f}s / {total_dur:04.1f}s", (240, 240, 240)),
+            ("Cycle Count     :", f"Cycle #{signal_controller.cycle_count}", C_TEXT_DIM),
+        ]
 
-    mode_txt = font_normal.render(mode_str, True, (255, 215, 60) if getattr(signal_controller, "preemption_active", False) or getattr(signal_controller, "preemption_clearing", False) or getattr(signal_controller, "emergency_terminating", False) else C_TEXT_DIM)
-    screen.blit(mode_txt, (px + 14, py + 220))
+        val_x = px + 140
+        val_max_w = panel_w - 152
+        for i, (label, val, col) in enumerate(lines):
+            ly = 52 + 34 + i * 19
+            screen.blit(font_normal.render(label, True, C_TEXT_DIM), (px + 12, ly))
+            val_fitted = fit_text_to_width(font_bold, val, val_max_w)
+            screen.blit(font_bold.render(val_fitted, True, col), (val_x, ly))
 
-    # 3. Bottom-Left Panel: V2I Wireless Communication & Telemetry (Phase 4)
-    left_margin = 20
-    bottom_margin = 50
-    v_panel_w = 360
-    v_panel_h = 210
-    v_px = left_margin
-    v_py = h - v_panel_h - bottom_margin
+        progress = 1.0 - (time_left / max(total_dur, 0.1))
+        bar_x, bar_y, bar_w, bar_h = px + 12, 52 + 154, panel_w - 24, 10
+        pygame.draw.rect(screen, (30, 40, 55), (bar_x, bar_y, bar_w, bar_h), border_radius=5)
+        bar_fill_col = (255, 210, 40) if "YELLOW" in phase_name else (60, 220, 120)
+        pygame.draw.rect(screen, bar_fill_col, (bar_x, bar_y, int(bar_w * progress), bar_h), border_radius=5)
+        pygame.draw.rect(screen, C_PANEL_BORDER, (bar_x, bar_y, bar_w, bar_h), 1, border_radius=5)
 
-    v_surf = pygame.Surface((v_panel_w, v_panel_h), pygame.SRCALPHA)
-    v_surf.fill(C_PANEL_BG)
-    screen.blit(v_surf, (v_px, v_py))
-    pygame.draw.rect(screen, C_PANEL_BORDER, (v_px, v_py, v_panel_w, v_panel_h), 2, border_radius=8)
+        safe_badge = "✓ MUTEX ENFORCED (NO CONFLICTING GREEN)"
+        safe_surf = font_normal.render(fit_text_to_width(font_normal, safe_badge, panel_w - 24), True, (60, 225, 130))
+        screen.blit(safe_surf, (px + 12, 52 + 176))
 
-    v2i_title = font_bold.render("V2I WIRELESS COMM (DSRC / C-V2X)", True, (80, 215, 255))
-    screen.blit(v2i_title, (v_px + 14, v_py + 10))
-    pygame.draw.line(screen, C_PANEL_BORDER, (v_px + 10, v_py + 30), (v_px + v_panel_w - 10, v_py + 30), 1)
+        mode_txt = font_normal.render(fit_text_to_width(font_normal, mode_str, panel_w - 24), True, (255, 215, 60) if getattr(signal_controller, "preemption_active", False) or getattr(signal_controller, "preemption_clearing", False) or getattr(signal_controller, "emergency_terminating", False) else C_TEXT_DIM)
+        screen.blit(mode_txt, (px + 12, 52 + 200))
 
-    comm_st = v2i_channel.comm_state if v2i_channel else "OFFLINE"
-    st_col = (60, 220, 120) if comm_st in ("DELIVERED", "IN_RANGE", "TRANSMITTED") else (
-        (255, 215, 60) if comm_st == "OUT_OF_RANGE" else (255, 80, 80)
-    )
+        # Classic Bottom-Left Panel: V2I Wireless Communication & Telemetry
+        v_surf = pygame.Surface((panel_w, bot_panel_h), pygame.SRCALPHA)
+        v_surf.fill(C_PANEL_BG)
+        screen.blit(v_surf, (px, bot_panel_y))
+        pygame.draw.rect(screen, C_PANEL_BORDER, (px, bot_panel_y, panel_w, bot_panel_h), 2, border_radius=8)
 
-    req_received = signal_controller.emergency_request_received
-    latest_req = signal_controller.latest_emergency_request
+        v2i_title = font_bold.render("V2X WIRELESS (V2I RSU + V2V PEER)", True, (80, 215, 255))
+        screen.blit(v2i_title, (px + 12, bot_panel_y + 6))
+        pygame.draw.line(screen, C_PANEL_BORDER, (px + 8, bot_panel_y + 25), (px + panel_w - 8, bot_panel_y + 25), 1)
 
-    v_lines = [
-        ("Comm State      :", comm_st, st_col),
-        ("Channel Config  :", f"Range: {int(v2i_channel.v2i_range) if v2i_channel else 400}px | Lat: {int((v2i_channel.latency if v2i_channel else 0.2)*1000)}ms", (220, 225, 235)),
-        ("Packet Stats    :", f"TX: {v2i_channel.packets_sent if v2i_channel else 0} | RX: {v2i_channel.packets_delivered if v2i_channel else 0} | Drop: {v2i_channel.packets_dropped if v2i_channel else 0}", (200, 210, 230)),
-        ("RSU Reception   :", "RECEIVED & BUFFERED" if req_received else "AWAITING IN-RANGE TX", (60, 220, 120) if req_received else C_TEXT_DIM),
-    ]
+        comm_st = v2i_channel.comm_state if v2i_channel else "OFFLINE"
+        st_col = (60, 220, 120) if comm_st in ("DELIVERED", "IN_RANGE", "TRANSMITTED") else (
+            (255, 215, 60) if comm_st == "OUT_OF_RANGE" else (255, 80, 80)
+        )
 
-    for i, (label, val, col) in enumerate(v_lines):
-        ly = v_py + 36 + i * 20
-        screen.blit(font_normal.render(label, True, C_TEXT_DIM), (v_px + 14, ly))
-        screen.blit(font_bold.render(val, True, col), (v_px + 155, ly))
+        req_received = signal_controller.emergency_request_received
+        latest_req = signal_controller.latest_emergency_request
 
-    if latest_req:
-        info_str = f"AMB-01 | ETA: {latest_req.get('eta', 0.0):.1f}s | Priority: {latest_req.get('priority', 'HIGH')}"
-        info_col = (255, 235, 100)
-    else:
-        info_str = "No emergency payload buffered"
-        info_col = C_TEXT_DIM
+        v_lines = [
+            ("V2I Comm State  :", comm_st, st_col),
+            ("RSU Link (400px):", f"TX: {v2i_channel.packets_sent if v2i_channel else 0} | RX: {v2i_channel.packets_delivered if v2i_channel else 0} | Drop: {v2i_channel.packets_dropped if v2i_channel else 0}", (200, 210, 230)),
+            ("RSU Reception   :", "RECEIVED & BUFFERED" if req_received else "AWAITING IN-RANGE TX", (60, 220, 120) if req_received else C_TEXT_DIM),
+        ]
 
-    screen.blit(font_normal.render("Payload Buffer  :", True, C_TEXT_DIM), (v_px + 14, v_py + 118))
-    screen.blit(font_bold.render(info_str, True, info_col), (v_px + 155, v_py + 118))
+        for i, (label, val, col) in enumerate(v_lines):
+            ly = bot_panel_y + 30 + i * 18
+            screen.blit(font_normal.render(label, True, C_TEXT_DIM), (px + 12, ly))
+            val_fitted = fit_text_to_width(font_bold, val, val_max_w)
+            screen.blit(font_bold.render(val_fitted, True, col), (val_x, ly))
 
-    pygame.draw.line(screen, C_PANEL_BORDER, (v_px + 10, v_py + 144), (v_px + v_panel_w - 10, v_py + 144), 1)
-    phase9_chain_badge = "AMB-01 ──(V2I)──> RSU-01 ──(PREEMPT)──> SIGNAL"
-    screen.blit(font_small.render(phase9_chain_badge, True, (80, 215, 255)), (v_px + 14, v_py + 154))
-    screen.blit(font_normal.render("End-to-End Infrastructure V2I Pipeline", True, C_TEXT_DIM), (v_px + 14, v_py + 178))
+        if latest_req:
+            info_str = f"ETA: {latest_req.get('eta', 0.0):.1f}s | Priority: {latest_req.get('priority', 'HIGH')}"
+            info_col = (255, 235, 100)
+        else:
+            info_str = "No payload buffered"
+            info_col = C_TEXT_DIM
+
+        screen.blit(font_normal.render("V2I Payload     :", True, C_TEXT_DIM), (px + 12, bot_panel_y + 86))
+        info_fitted = fit_text_to_width(font_bold, info_str, val_max_w)
+        screen.blit(font_bold.render(info_fitted, True, info_col), (val_x, bot_panel_y + 86))
+
+        pygame.draw.line(screen, C_PANEL_BORDER, (px + 8, bot_panel_y + 108), (px + panel_w - 8, bot_panel_y + 108), 1)
+
+        amb = traffic_manager.ambulance if traffic_manager else None
+        v2v_threat_id = getattr(amb, "v2v_detected_vehicle_id", None) if amb else None
+        if not v2v_threat_id and amb and getattr(amb, "latest_v2v_threat", None):
+            v2v_threat_id = amb.latest_v2v_threat.sender_id
+        v2v_peer = v2v_threat_id or "C-01"
+        v2v_risk = getattr(amb, "v2v_risk_state", "NONE") if amb else "NONE"
+        v2v_ttc = getattr(amb, "v2v_ttc", float("inf")) if amb else float("inf")
+        is_evading = getattr(amb, "is_v2v_evading", False) if amb else False
+        is_braking = getattr(amb, "v2v_emergency_braking", False) if amb else False
+        evasion_done = getattr(amb, "v2v_evasion_complete", False) if amb else False
+
+        if v2v_risk == "CRITICAL" or is_braking:
+            v2v_badge_col = (255, 65, 65)
+            v2v_status_txt = f"CRITICAL (TTC: {v2v_ttc:.2f}s)" if v2v_ttc < 99.0 else "CRITICAL RISK"
+        elif is_evading:
+            v2v_badge_col = (255, 175, 45)
+            v2v_status_txt = f"EVASIVE MANEUVER (TTC: {v2v_ttc:.2f}s)"
+        elif evasion_done:
+            v2v_badge_col = (60, 225, 130)
+            v2v_status_txt = "EVASION COMPLETE (SAFE)"
+        elif v2v_risk == "WARNING":
+            v2v_badge_col = (255, 215, 60)
+            v2v_status_txt = f"WARNING (TTC: {v2v_ttc:.2f}s)"
+        elif v2v_risk == "SAFE":
+            v2v_badge_col = (60, 225, 130)
+            v2v_status_txt = f"SAFE (TTC: {v2v_ttc:.1f}s)"
+        else:
+            v2v_badge_col = C_TEXT_DIM
+            v2v_status_txt = "STANDBY / MONITORING"
+
+        v2v_title_surf = font_bold.render(f"V2V PEER LINK : AMB-01 ↔ {v2v_peer}", True, (255, 185, 45) if v2v_risk in ("WARNING", "CRITICAL") or is_evading or is_braking else (120, 210, 255))
+        screen.blit(v2v_title_surf, (px + 12, bot_panel_y + 114))
+
+        screen.blit(font_normal.render("V2V Threat/Risk :", True, C_TEXT_DIM), (px + 12, bot_panel_y + 134))
+        threat_fitted = fit_text_to_width(font_bold, v2v_status_txt, val_max_w)
+        screen.blit(font_bold.render(threat_fitted, True, v2v_badge_col), (val_x, bot_panel_y + 134))
+
+        if is_evading:
+            resp_txt = "⇗ LATERAL SHIFT TO LANE 2"
+            resp_col = (255, 195, 45)
+        elif is_braking:
+            resp_txt = "⛔ EMERGENCY BRAKING (BLOCKED)"
+            resp_col = (255, 75, 75)
+        elif evasion_done:
+            resp_txt = "✓ CORRIDOR CLEAR (CRUISING)"
+            resp_col = (60, 225, 130)
+        elif v2v_risk == "CRITICAL":
+            resp_txt = "⚡ EVASIVE MANEUVER TRIGGERED"
+            resp_col = (255, 75, 75)
+        else:
+            resp_txt = "SAFE FOLLOWING / CRUISE"
+            resp_col = C_TEXT_DIM
+
+        screen.blit(font_normal.render("V2V Response    :", True, C_TEXT_DIM), (px + 12, bot_panel_y + 154))
+        resp_fitted = fit_text_to_width(font_bold, resp_txt, val_max_w)
+        screen.blit(font_bold.render(resp_fitted, True, resp_col), (val_x, bot_panel_y + 154))
+
+        pygame.draw.line(screen, C_PANEL_BORDER, (px + 8, bot_panel_y + 176), (px + panel_w - 8, bot_panel_y + 176), 1)
+        phase9_chain_badge = "V2I: RSU Preemption  |  V2V: Collision Avoidance"
+        screen.blit(font_small.render(phase9_chain_badge, True, (80, 215, 255)), (px + 12, bot_panel_y + 184))
+        screen.blit(font_normal.render("Integrated Dual-Layer Connected Vehicle System", True, C_TEXT_DIM), (px + 12, bot_panel_y + 204))
 
     # 4. Right Top Panel: RSU Traffic Conflict & AMB-01 Telemetry
-    r_panel_w, r_panel_h = 380, 280
-    rx = w - r_panel_w - 20
-    ry = 55
+    r_panel_h = 265
+    ry = 52
 
-    rp_surf = pygame.Surface((r_panel_w, r_panel_h), pygame.SRCALPHA)
+    rp_surf = pygame.Surface((panel_w, r_panel_h), pygame.SRCALPHA)
     rp_surf.fill(C_PANEL_BG)
     screen.blit(rp_surf, (rx, ry))
-    pygame.draw.rect(screen, C_PANEL_BORDER, (rx, ry, r_panel_w, r_panel_h), 2, border_radius=8)
+    pygame.draw.rect(screen, C_PANEL_BORDER, (rx, ry, panel_w, r_panel_h), 2, border_radius=8)
 
     sig_title = font_bold.render("CONFLICT ANALYSIS & AMB-01 TELEMETRY", True, C_TITLE)
-    screen.blit(sig_title, (rx + 14, ry + 10))
-    pygame.draw.line(screen, C_PANEL_BORDER, (rx + 10, ry + 30), (rx + r_panel_w - 10, ry + 30), 1)
+    screen.blit(sig_title, (rx + 12, ry + 8))
+    pygame.draw.line(screen, C_PANEL_BORDER, (rx + 8, ry + 27), (rx + panel_w - 8, ry + 27), 1)
+
+    r_val_x = rx + 138
+    r_val_max_w = panel_w - 150
+
+    prev_clip = screen.get_clip()
+    screen.set_clip(pygame.Rect(rx + 2, ry + 28, panel_w - 4, r_panel_h - 30))
 
     # 4-Approach mini overview bar
     n_sig = signal_controller.get_signal("NORTH").value
@@ -1111,8 +1871,8 @@ def draw_hud(
     e_sig = signal_controller.get_signal("EAST").value
     w_sig = signal_controller.get_signal("WEST").value
     app_str = f"N: {n_sig[:3]}  S: {s_sig[:3]}  E: {e_sig[:3]}  W: {w_sig[:3]}"
-    screen.blit(font_normal.render("Approach Signals :", True, C_TEXT_DIM), (rx + 14, ry + 36))
-    screen.blit(font_bold.render(app_str, True, (255, 215, 60) if "YEL" in app_str else ((60, 220, 120) if "GRN" in app_str else (255, 90, 90))), (rx + 160, ry + 36))
+    screen.blit(font_normal.render("Approach Signals :", True, C_TEXT_DIM), (rx + 12, ry + 32))
+    screen.blit(font_bold.render(app_str, True, (255, 215, 60) if "YEL" in app_str else ((60, 220, 120) if "GRN" in app_str else (255, 90, 90))), (r_val_x, ry + 32))
 
     # Conflict zone status
     analysis = getattr(signal_controller, "latest_analysis", None)
@@ -1136,14 +1896,17 @@ def draw_hud(
         gate_str = "INACTIVE (STANDBY)"
         gate_col = C_TEXT_DIM
 
-    screen.blit(font_normal.render("Conflict Zone    :", True, C_TEXT_DIM), (rx + 14, ry + 56))
-    screen.blit(font_bold.render(cz_str, True, cz_col), (rx + 160, ry + 56))
-    screen.blit(font_normal.render("Preemption Gate  :", True, C_TEXT_DIM), (rx + 14, ry + 76))
-    screen.blit(font_bold.render(gate_str, True, gate_col), (rx + 160, ry + 76))
+    screen.blit(font_normal.render("Conflict Zone    :", True, C_TEXT_DIM), (rx + 12, ry + 51))
+    cz_fitted = fit_text_to_width(font_bold, cz_str, r_val_max_w)
+    screen.blit(font_bold.render(cz_fitted, True, cz_col), (r_val_x, ry + 51))
+
+    screen.blit(font_normal.render("Preemption Gate  :", True, C_TEXT_DIM), (rx + 12, ry + 70))
+    gate_fitted = fit_text_to_width(font_bold, gate_str, r_val_max_w)
+    screen.blit(font_bold.render(gate_fitted, True, gate_col), (r_val_x, ry + 70))
 
     # AMB-01 Telemetry Sub-panel
-    pygame.draw.line(screen, C_PANEL_BORDER, (rx + 10, ry + 98), (rx + r_panel_w - 10, ry + 98), 1)
-    screen.blit(font_bold.render("AMB-01 EMERGENCY TELEMETRY", True, (255, 110, 110)), (rx + 14, ry + 104))
+    pygame.draw.line(screen, C_PANEL_BORDER, (rx + 8, ry + 90), (rx + panel_w - 8, ry + 90), 1)
+    screen.blit(font_bold.render("AMB-01 EMERGENCY TELEMETRY", True, (255, 110, 110)), (rx + 12, ry + 95))
 
     if traffic_manager and traffic_manager.ambulance:
         amb = traffic_manager.ambulance
@@ -1160,6 +1923,12 @@ def draw_hud(
         elif getattr(amb, "in_intersection", False):
             st_text = "CROSSING_INTERSECTION"
             st_col = (60, 225, 120)
+        elif getattr(amb, "is_v2v_evading", False) or getattr(amb, "state", None) == VehicleState.V2V_EVASIVE_MANEUVER:
+            st_text = "V2V EVASIVE MANEUVER"
+            st_col = (255, 165, 35)
+        elif getattr(amb, "v2v_emergency_braking", False) or getattr(amb, "state", None) == VehicleState.V2V_EMERGENCY_BRAKING:
+            st_text = "V2V EMERGENCY BRAKING"
+            st_col = (255, 60, 60)
         elif getattr(amb, "is_overtaking", False) or getattr(amb, "state", None) == VehicleState.OVERTAKING:
             st_text = "OVERTAKING IN LANE 2"
             st_col = (255, 195, 45)
@@ -1176,27 +1945,43 @@ def draw_hud(
             st_text = "APPROACHING"
             st_col = (60, 220, 120)
 
-        # Distances to stop line & exit
-        lc = traffic_manager.lane_coords.get("SOUTH", {"stop": 490.0, "exit": 350.0})
-        d_stop = max(0.0, amb.front_pos[1] - lc["stop"])
-        d_exit = max(0.0, amb.rear_pos[1] - lc["exit"])
+        v2v_risk_val = getattr(amb, "v2v_risk_state", "NONE")
+        v2v_ttc_val = getattr(amb, "v2v_ttc", float("inf"))
+        if v2v_risk_val == "CRITICAL":
+            v2v_txt = f"CRITICAL ({v2v_ttc_val:.2f}s)"
+            v2v_col = (255, 65, 65)
+        elif v2v_risk_val == "WARNING":
+            v2v_txt = f"WARNING ({v2v_ttc_val:.2f}s)"
+            v2v_col = (255, 215, 60)
+        elif getattr(amb, "v2v_evasion_complete", False):
+            v2v_txt = "EVASION COMPLETE (SAFE)"
+            v2v_col = (60, 225, 130)
+        elif v2v_risk_val == "SAFE":
+            v2v_txt = f"SAFE ({v2v_ttc_val:.1f}s)"
+            v2v_col = (60, 225, 130)
+        else:
+            v2v_txt = "STANDBY / CLEAR"
+            v2v_col = C_TEXT_DIM
 
         amb_lines = [
             ("Vehicle ID / Type:", "AMB-01 (EMERGENCY)", (255, 235, 100)),
             ("Speed / Heading  :", f"{amb.speed:.0f}px/s ({kmh:.0f} km/h) | S -> N", (230, 235, 245)),
             ("Navigation State :", st_text, st_col),
             ("Corridor Lane    :", lane_str, (200, 215, 235)),
-            ("Stop / Exit Gap  :", f"Stop: {d_stop:.0f}px | Exit: {d_exit:.0f}px", (180, 200, 220)),
+            ("V2V Threat / TTC :", v2v_txt, v2v_col),
             ("Emergency Priority:", "ACTIVE (SOUTH GREEN)" if getattr(amb, "is_authorized", False) else "AWAITING PREEMPTION", (60, 225, 120) if getattr(amb, "is_authorized", False) else C_TEXT_DIM),
         ]
         for i, (label, val, col) in enumerate(amb_lines):
-            ly = ry + 126 + i * 20
-            screen.blit(font_normal.render(label, True, C_TEXT_DIM), (rx + 14, ly))
-            screen.blit(font_bold.render(val, True, col), (rx + 160, ly))
+            ly = ry + 115 + i * 19
+            screen.blit(font_normal.render(label, True, C_TEXT_DIM), (rx + 12, ly))
+            val_fitted = fit_text_to_width(font_bold, val, r_val_max_w)
+            screen.blit(font_bold.render(val_fitted, True, col), (r_val_x, ly))
     else:
-        screen.blit(font_normal.render("AMB-01 Status : STANDBY / INACTIVE", True, C_TEXT_DIM), (rx + 14, ry + 130))
+        screen.blit(font_normal.render("AMB-01 Status : STANDBY / INACTIVE", True, C_TEXT_DIM), (rx + 12, ry + 120))
 
-    # 5. Right Bottom Panel: Live Event Timeline (Phase 9)
+    screen.set_clip(prev_clip)
+
+    # 5. Right Bottom Panel: Live Event Timeline
     draw_event_timeline(
         screen=screen,
         event_logger=event_logger,
@@ -1204,19 +1989,20 @@ def draw_hud(
         font_normal=font_normal,
         font_small=font_small,
         px=rx,
-        py=h - 210 - bottom_margin,
-        panel_w=r_panel_w,
-        panel_h=210,
+        py=bot_panel_y,
+        panel_w=panel_w,
+        panel_h=bot_panel_h,
+        traffic_manager=traffic_manager,
     )
 
     # 6. Bottom Controls Banner
-    bottom_surf = pygame.Surface((w - 40, 32), pygame.SRCALPHA)
+    bottom_surf = pygame.Surface((w - 2 * margin_x, controls_h), pygame.SRCALPHA)
     bottom_surf.fill((10, 15, 25, 210))
-    screen.blit(bottom_surf, (20, h - 42))
-    pygame.draw.rect(screen, C_PANEL_BORDER, (20, h - 42, w - 40, 32), 1, border_radius=6)
+    screen.blit(bottom_surf, (margin_x, controls_y))
+    pygame.draw.rect(screen, C_PANEL_BORDER, (margin_x, controls_y, w - 2 * margin_x, controls_h), 1, border_radius=6)
 
-    controls_text = font_normal.render(
-        "V2I SMART INTERSECTION (PHASE 9)  |  [SPACE] Pause/Resume    [R] Reset Simulation    [ESC / Q] Launcher",
-        True, (190, 205, 225)
-    )
-    screen.blit(controls_text, (w // 2 - controls_text.get_width() // 2, h - 34))
+    controls_text = "INTEGRATED V2X SMART INTERSECTION (PHASE 13)  |  [SPACE] Pause/Resume    [R] Reset    [I] Toggle AI    [ESC / Q] Launcher"
+    controls_fitted = fit_text_to_width(font_normal, controls_text, w - 2 * margin_x - 16)
+    controls_render = font_normal.render(controls_fitted, True, (190, 205, 225))
+    screen.blit(controls_render, (w // 2 - controls_render.get_width() // 2, controls_y + 5))
+
