@@ -326,6 +326,91 @@
         options: getChartOptions('Seconds (s)'),
       });
     }
+
+    // Chart 4: Advisory AI Predicted Conflict vs. Kinematic TTC Critical Timeline (Seed 42)
+    const ctxAiTtc = document.getElementById('aiVsTtcChart')?.getContext('2d');
+    if (ctxAiTtc) {
+      if (chartInstances.aiTtc) chartInstances.aiTtc.destroy();
+
+      chartInstances.aiTtc = new Chart(ctxAiTtc, {
+        type: 'bar',
+        data: {
+          labels: [
+            '1. AI Predicted Conflict',
+            '2. Kinematic TTC Critical',
+            '3. Ambulance Evasive Start',
+            '4. Lane Maneuver Complete',
+          ],
+          datasets: [
+            {
+              label: 'Event Epoch (Seconds in Seed-42 Run)',
+              data: [10.93, 11.43, 11.45, 12.25],
+              backgroundColor: [
+                'rgba(245, 158, 11, 0.85)',  // Amber for AI Early Forecast
+                'rgba(239, 68, 68, 0.85)',   // Red for Kinematic TTC Critical
+                'rgba(59, 130, 246, 0.85)',  // Blue for Evasive Action Initiated
+                'rgba(16, 185, 129, 0.85)',  // Green for Maneuver Secured
+              ],
+              borderColor: [
+                '#f59e0b',
+                '#ef4444',
+                '#3b82f6',
+                '#10b981',
+              ],
+              borderWidth: 1.5,
+              borderRadius: 6,
+              barThickness: 24,
+            },
+          ],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.95)',
+              titleColor: '#f1f5f9',
+              bodyColor: '#cbd5e1',
+              borderColor: 'rgba(255, 255, 255, 0.1)',
+              borderWidth: 1,
+              padding: 10,
+              callbacks: {
+                label: function (ctx) {
+                  return `Timestamp: ${ctx.raw.toFixed(2)} s`;
+                },
+                afterLabel: function (ctx) {
+                  const descs = [
+                    'Advisory conflict forecast (Clearance: 72.8px <= 75px buffer) | +0.50s lead',
+                    'Kinematic TTC threshold crossed (TTC = 1.99s <= 2.0s)',
+                    'Safety Fusion confirms Lane 2 clear -> shift to x=628.0 px',
+                    'Lateral evasion secured -> collision avoided at emergency speed',
+                  ];
+                  return descs[ctx.dataIndex] || '';
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              min: 10.0,
+              max: 13.0,
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#94a3b8', font: { size: 11 }, stepSize: 0.5 },
+              title: { display: true, text: 'Simulation Time (Seconds)', color: '#64748b', font: { size: 11 } },
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: '#cbd5e1', font: { size: 11, weight: 'bold' } },
+            },
+          },
+        },
+      });
+    }
+
+    // Render interactive trajectory canvas
+    renderTrajectoryCanvas();
   }
 
   function getChartOptions(yAxisTitle) {
@@ -521,6 +606,314 @@
     });
   }
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // 6. Interactive Trajectory Visualizer Canvas
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const waypointsData = [
+    { num: 1, dt: 0.25, simX: 592.0, simY: 737.0, canvasY: 104, deltaY: 26.0 },
+    { num: 2, dt: 0.50, simX: 592.0, simY: 710.5, canvasY: 86,  deltaY: 52.5 },
+    { num: 3, dt: 0.75, simX: 591.7, simY: 684.4, canvasY: 68,  deltaY: 78.6 },
+    { num: 4, dt: 1.00, simX: 591.8, simY: 658.7, canvasY: 50,  deltaY: 104.3 },
+    { num: 5, dt: 1.25, simX: 591.9, simY: 633.2, canvasY: 32,  deltaY: 129.8 },
+    { num: 6, dt: 1.50, simX: 591.8, simY: 608.1, canvasY: 15,  deltaY: 154.9, isFinal: true },
+  ];
+
+  let hoveredWaypoint = null;
+
+  function renderTrajectoryCanvas() {
+    const canvas = document.getElementById('trajectoryCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = 460;
+    const h = 240;
+
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.scale(dpr, dpr);
+
+    // Background: dark asphalt
+    ctx.fillStyle = '#080c16';
+    ctx.fillRect(0, 0, w, h);
+
+    // Roadway boundaries (Southbound Corridor)
+    const roadLeft = 40;
+    const roadRight = 420;
+    const roadMid = (roadLeft + roadRight) / 2; // 230px
+    const lane1X = 145; // Primary Lane (C-01 & AMB initial)
+    const lane2X = 315; // Passing / Evasive Lane
+
+    // Asphalt surface
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(roadLeft, 0, roadRight - roadLeft, h);
+
+    // Road edge curbs
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(roadLeft, 0); ctx.lineTo(roadLeft, h);
+    ctx.moveTo(roadRight, 0); ctx.lineTo(roadRight, h);
+    ctx.stroke();
+
+    // Center dashed lane divider
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 8]);
+    ctx.beginPath();
+    ctx.moveTo(roadMid, 0);
+    ctx.lineTo(roadMid, h);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Lane Labels
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.5)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('LANE 1 (PRIMARY x=592)', lane1X, h - 8);
+    ctx.fillText('LANE 2 (PASSING x=628)', lane2X, h - 8);
+
+    // Intersection entrance line at top (y = 8)
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(roadLeft, 8); ctx.lineTo(roadRight, 8);
+    ctx.stroke();
+    ctx.fillStyle = '#ef4444';
+    ctx.font = '9px monospace';
+    ctx.fillText('STOP LINE / INTERSECTION BOX ENTRANCE (y=490 px)', roadMid, 6);
+
+    // Projected Ambulance Evasive Path (Lane 1 -> Lane 2)
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(lane1X, 205);
+    ctx.bezierCurveTo(lane1X, 160, lane2X, 150, lane2X, 70);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#60a5fa';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('↗ Evasive Shift to Lane 2 (x=628.0)', lane2X - 55, 115);
+
+    // Draw Ambulance AMB-01 (Approaching Behind)
+    const ambY = 195;
+    ctx.fillStyle = '#f8fafc';
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, lane1X - 11, ambY, 22, 34, 4, true, true);
+
+    // Red side stripe on ambulance
+    ctx.fillStyle = '#ef4444';
+    ctx.fillRect(lane1X - 11, ambY + 6, 2, 22);
+    ctx.fillRect(lane1X + 9, ambY + 6, 2, 22);
+
+    // Lightbar (flashing strobe)
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(lane1X - 6, ambY + 4, 12, 3);
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = 'bold 9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('AMB-01', lane1X, ambY + 20);
+
+    // Safety Bumper Clearance Buffer (75px threshold)
+    ctx.strokeStyle = 'rgba(245, 158, 11, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    ctx.strokeRect(lane1X - 16, 120, 32, ambY - 120);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(245, 158, 11, 0.7)';
+    ctx.font = '9px monospace';
+    ctx.fillText('Buffer 75px', lane1X - 35, 160);
+
+    // Draw Lead Civilian Vehicle C-01
+    const c01Y = 120;
+    ctx.fillStyle = '#334155';
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, lane1X - 10, c01Y, 20, 30, 4, true, true);
+
+    // C-01 Windshield & Lights
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(lane1X - 7, c01Y + 4, 14, 6);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = 'bold 9px monospace';
+    ctx.fillText('C-01', lane1X, c01Y + 20);
+
+    // AI Predicted Trajectory Line connecting 6 waypoints
+    ctx.strokeStyle = 'rgba(6, 182, 212, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(lane1X, c01Y);
+    waypointsData.forEach(wp => {
+      ctx.lineTo(lane1X, wp.canvasY);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw the 6 Waypoint Markers
+    waypointsData.forEach(wp => {
+      const isHov = hoveredWaypoint === wp.num;
+      const r = wp.isFinal ? 5 : (isHov ? 5 : 3.5);
+
+      // Outer glow halo
+      ctx.fillStyle = wp.isFinal
+        ? 'rgba(168, 85, 247, 0.35)'
+        : (isHov ? 'rgba(6, 182, 212, 0.5)' : 'rgba(6, 182, 212, 0.2)');
+      ctx.beginPath();
+      ctx.arc(lane1X, wp.canvasY, r + 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Core waypoint circle
+      ctx.fillStyle = wp.isFinal ? '#c084fc' : '#38bdf8';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(lane1X, wp.canvasY, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Text labels beside waypoint
+      ctx.fillStyle = wp.isFinal ? '#c084fc' : (isHov ? '#ffffff' : '#94a3b8');
+      ctx.font = isHov ? 'bold 10px monospace' : '9px monospace';
+      ctx.textAlign = 'left';
+      const label = wp.isFinal
+        ? `WP#${wp.num} (+${wp.dt.toFixed(2)}s AI HORIZON)`
+        : `WP#${wp.num} (+${wp.dt.toFixed(2)}s)`;
+      ctx.fillText(label, lane1X + 10, wp.canvasY + 3);
+    });
+
+    // Tooltip if hovering over a waypoint
+    if (hoveredWaypoint !== null) {
+      const activeWp = waypointsData.find(w => w.num === hoveredWaypoint);
+      if (activeWp) {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 1;
+        const boxX = lane1X + 130;
+        const boxY = Math.max(10, activeWp.canvasY - 20);
+        roundRect(ctx, boxX, boxY, 150, 42, 4, true, true);
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(`WAYPOINT #${activeWp.num} (+${activeWp.dt.toFixed(2)}s)`, boxX + 8, boxY + 14);
+
+        ctx.fillStyle = '#f1f5f9';
+        ctx.font = '9px monospace';
+        ctx.fillText(`Sim: (${activeWp.simX}, ${activeWp.simY}) px`, boxX + 8, boxY + 26);
+        ctx.fillText(`Forward Delta: +${activeWp.deltaY} px`, boxX + 8, boxY + 37);
+      }
+    }
+  }
+
+  function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
+  }
+
+  // Interactive hover inspection on Trajectory Canvas
+  const trajCanvas = document.getElementById('trajectoryCanvas');
+  if (trajCanvas) {
+    trajCanvas.addEventListener('mousemove', (e) => {
+      const rect = trajCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      let found = null;
+      waypointsData.forEach(wp => {
+        // Distance check to waypoint (lane1X = 145)
+        const dx = mouseX - 145;
+        const dy = mouseY - wp.canvasY;
+        if (Math.hypot(dx, dy) <= 16) {
+          found = wp.num;
+        }
+      });
+
+      if (found !== hoveredWaypoint) {
+        hoveredWaypoint = found;
+        renderTrajectoryCanvas();
+      }
+    });
+
+    trajCanvas.addEventListener('mouseleave', () => {
+      if (hoveredWaypoint !== null) {
+        hoveredWaypoint = null;
+        renderTrajectoryCanvas();
+      }
+    });
+  }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // 7. Sticky Sub-Navigation & Scroll Spy
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const navLinks = document.querySelectorAll('.nav-link');
+  navLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      const targetId = link.getAttribute('href');
+      if (targetId && targetId.startsWith('#')) {
+        const targetEl = document.querySelector(targetId);
+        if (targetEl) {
+          e.preventDefault();
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          navLinks.forEach(l => l.classList.remove('active'));
+          link.classList.add('active');
+        }
+      }
+    });
+  });
+
+  window.addEventListener('scroll', () => {
+    const sections = document.querySelectorAll('.section-container, #section-trials-table');
+    const scrollPos = window.scrollY + 160;
+    let currentId = '';
+
+    sections.forEach(sec => {
+      if (sec.offsetTop <= scrollPos) {
+        currentId = sec.getAttribute('id');
+      }
+    });
+
+    if (currentId) {
+      navLinks.forEach(link => {
+        if (link.getAttribute('href') === `#${currentId}`) {
+          link.classList.add('active');
+        } else {
+          link.classList.remove('active');
+        }
+      });
+    }
+  });
+
+  // Window resize handler for canvas & charts
+  window.addEventListener('resize', () => {
+    renderTrajectoryCanvas();
+  });
+
   // Initialize on load
-  document.addEventListener('DOMContentLoaded', loadData);
+  document.addEventListener('DOMContentLoaded', () => {
+    loadData();
+    renderTrajectoryCanvas();
+  });
 })();
+

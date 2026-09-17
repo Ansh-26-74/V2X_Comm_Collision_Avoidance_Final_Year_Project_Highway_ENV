@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V2I Smart Intersection — Phase 10 Quantitative Benefit Dashboard</title>
+  <title>AI-Based Collision Avoidance System Using V2X Communication — Technical Research Dashboard</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- Chart.js from CDN with graceful SVG canvas fallback -->
+  <!-- Chart.js from CDN with graceful SVG fallback -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="dashboard-container" id="dashboardContainer">
     <!-- Top Header & Controls Toolbar -->
-    <header class="header-card">
+    <header class="header-card" id="topHeader">
       <div class="header-main">
         <div class="brand-group">
           <div class="brand-icon">
@@ -20,12 +20,13 @@
           </div>
           <div class="title-meta">
             <div class="project-tagline">
-              <span class="badge badge-accent">PHASE 10 COMPLETE</span>
+              <span class="badge badge-accent">DUAL-LAYER V2X</span>
+              <span class="badge badge-ai">ADVISORY AI (PYTORCH MLP)</span>
               <span class="badge badge-outline">Controlled Simulation Benchmark</span>
               <span class="badge badge-subtle" id="dataSourceBadge">Source: benchmark_results.json</span>
             </div>
-            <h1 class="main-title">V2I SMART INTERSECTION</h1>
-            <h2 class="sub-title">Quantitative Emergency Signal Preemption Benefit Analysis</h2>
+            <h1 class="main-title">AI-BASED COLLISION AVOIDANCE SYSTEM USING V2X COMMUNICATION</h1>
+            <h2 class="sub-title">Dual-Layer V2I Infrastructure Preemption + Peer V2V Advisory AI Trajectory Prediction &amp; Safety Fusion</h2>
           </div>
         </div>
 
@@ -42,7 +43,7 @@
             </div>
             <div class="stat-chip">
               <span class="chip-label">Test Suite</span>
-              <span class="chip-val chip-highlight">116 / 116 Passing</span>
+              <span class="chip-val chip-highlight">226 / 226 Passing</span>
             </div>
           </div>
 
@@ -54,7 +55,7 @@
               <span class="btn-icon">📂</span> Load JSON
               <input type="file" id="jsonFileInput" accept=".json" style="display: none;">
             </label>
-            <button class="btn btn-accent" id="presentationBtn" title="Toggle Classroom Presentation View">
+            <button class="btn btn-accent" id="presentationBtn" title="Toggle Presentation View">
               <span class="btn-icon">📺</span> Presentation Mode
             </button>
             <button class="btn btn-ghost" id="fullscreenBtn" title="Toggle Fullscreen">
@@ -63,6 +64,20 @@
           </div>
         </div>
       </div>
+
+      <!-- Quick Navigation Sticky Sub-Navbar -->
+      <nav class="sub-nav-strip" aria-label="Dashboard Sections">
+        <div class="nav-links">
+          <a href="#section-executive" class="nav-link active"><span class="nav-num">01</span> Executive KPIs</a>
+          <a href="#section-architecture" class="nav-link"><span class="nav-num">02</span> Dual-Layer Architecture</a>
+          <a href="#section-v2v-telemetry" class="nav-link"><span class="nav-num">03</span> V2V Peer Telemetry</a>
+          <a href="#section-ai-trajectory" class="nav-link"><span class="nav-num">04</span> AI Trajectory Model</a>
+          <a href="#section-ai-vs-ttc" class="nav-link"><span class="nav-num">05</span> AI vs. TTC Comparison</a>
+          <a href="#section-safety-fusion" class="nav-link"><span class="nav-num">06</span> Safety Fusion &amp; Fallbacks</a>
+          <a href="#section-v2i-benchmarks" class="nav-link"><span class="nav-num">07</span> V2I Infrastructure Benchmark</a>
+          <a href="#section-trials-table" class="nav-link"><span class="nav-num">08</span> Paired Dataset</a>
+        </div>
+      </nav>
     </header>
 
     <!-- Local File Security Banner (Displayed only if browser blocks local fetch) -->
@@ -71,7 +86,7 @@
         <span class="alert-icon">⚠️</span>
         <div class="alert-text">
           <strong>Local Browser Security Restriction (file:// protocol):</strong>
-          Direct JSON fetch was restricted by browser origin policy. Please click <strong>Load JSON</strong> to select <code>benchmark_results.json</code> from the project folder.
+          Direct JSON fetch was restricted by browser origin policy. Click <strong>Load JSON</strong> to select <code>benchmark_results.json</code> from the project folder.
         </div>
       </div>
       <button class="btn btn-sm btn-accent" onclick="document.getElementById('jsonFileInput').click()">
@@ -89,233 +104,1077 @@
 
     <!-- Main Dashboard Content -->
     <main class="dashboard-content" id="mainDashboardContent">
-      <!-- 1. Primary KPI Summary Cards -->
-      <section class="kpi-grid">
-        <!-- KPI 1: Mean Travel Time -->
-        <div class="kpi-card card-primary">
-          <div class="kpi-header">
-            <span class="kpi-title">Mean Travel Time</span>
-            <span class="kpi-badge badge-green" id="kpiTravelTimeReduction">-23.8%</span>
+
+      <!-- =====================================================================
+           SECTION 1: EXECUTIVE QUANTITATIVE SUMMARY CARDS
+           ===================================================================== -->
+      <section class="section-container" id="section-executive">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 01</span>
+            <h2 class="section-title">Executive Quantitative Summary</h2>
+            <p class="section-desc">Key verified engineering benchmarks across dual-layer V2I preemption and peer-to-peer V2V advisory AI</p>
           </div>
-          <div class="kpi-values">
-            <div class="val-group">
-              <span class="val-label">Baseline</span>
-              <span class="val-number num-baseline" id="kpiBaseTravelTime">11.35 <span class="val-unit">s</span></span>
-            </div>
-            <div class="val-divider">→</div>
-            <div class="val-group">
-              <span class="val-label">V2I Enabled</span>
-              <span class="val-number num-v2i" id="kpiV2iTravelTime">8.65 <span class="val-unit">s</span></span>
-            </div>
-          </div>
-          <div class="kpi-footer">
-            <span class="delta-tag delta-positive" id="kpiTravelTimeDelta">↓ 2.70 s travel time reduction</span>
-            <span class="kpi-subtext">Spawn to full-body intersection clearance</span>
-          </div>
+          <span class="badge badge-cyan">Simulation Configuration &amp; Measured Data</span>
         </div>
 
-        <!-- KPI 2: Mean Signal Waiting Time -->
-        <div class="kpi-card card-accent">
-          <div class="kpi-header">
-            <span class="kpi-title">Mean Signal Waiting Time</span>
-            <span class="kpi-badge badge-green" id="kpiSignalWaitReduction">-54.3%</span>
-          </div>
-          <div class="kpi-values">
-            <div class="val-group">
-              <span class="val-label">Baseline</span>
-              <span class="val-number num-baseline" id="kpiBaseSignalWait">4.97 <span class="val-unit">s</span></span>
+        <div class="exec-summary-grid">
+          <!-- Metric 1: V2V Frequency -->
+          <div class="exec-card">
+            <div class="exec-card-top">
+              <span class="exec-label">V2V Broadcast Rate</span>
+              <span class="exec-pill pill-cyan">V2V Channel</span>
             </div>
-            <div class="val-divider">→</div>
-            <div class="val-group">
-              <span class="val-label">V2I Enabled</span>
-              <span class="val-number num-v2i" id="kpiV2iSignalWait">2.27 <span class="val-unit">s</span></span>
+            <div class="exec-val-row">
+              <span class="exec-number text-cyan">10</span>
+              <span class="exec-unit">Hz</span>
             </div>
+            <p class="exec-desc">Peer telemetry packets transmitted every 100 ms via direct simulated vehicle-to-vehicle link.</p>
+            <div class="exec-tag">Configured Parameter</div>
           </div>
-          <div class="kpi-footer">
-            <span class="delta-tag delta-positive" id="kpiSignalWaitDelta">↓ 2.70 s wait time reduction</span>
-            <span class="kpi-subtext">Time in WAITING_AT_RED state</span>
-          </div>
-        </div>
 
-        <!-- KPI 3: Mean Intersection Clearance -->
-        <div class="kpi-card">
-          <div class="kpi-header">
-            <span class="kpi-title">Intersection Clearance</span>
-            <span class="kpi-badge badge-neutral">Identical</span>
-          </div>
-          <div class="kpi-values">
-            <div class="val-group">
-              <span class="val-label">Baseline</span>
-              <span class="val-number" id="kpiBaseClearance">1.73 <span class="val-unit">s</span></span>
+          <!-- Metric 2: AI Horizon -->
+          <div class="exec-card">
+            <div class="exec-card-top">
+              <span class="exec-label">AI Prediction Horizon</span>
+              <span class="exec-pill pill-purple">PyTorch MLP</span>
             </div>
-            <div class="val-divider">→</div>
-            <div class="val-group">
-              <span class="val-label">V2I Enabled</span>
-              <span class="val-number" id="kpiV2iClearance">1.73 <span class="val-unit">s</span></span>
+            <div class="exec-val-row">
+              <span class="exec-number text-purple">1.50</span>
+              <span class="exec-unit">s</span>
             </div>
+            <p class="exec-desc">Forward temporal projection generating 6 discrete future waypoints at 0.25-second intervals.</p>
+            <div class="exec-tag">Model Architecture</div>
           </div>
-          <div class="kpi-footer">
-            <span class="delta-tag delta-neutral">0.00 s physical delta</span>
-            <span class="kpi-subtext">Stop line crossing to full exit</span>
-          </div>
-        </div>
 
-        <!-- KPI 4: Mean Full Stops -->
-        <div class="kpi-card">
-          <div class="kpi-header">
-            <span class="kpi-title">Mean Full Stops</span>
-            <span class="kpi-badge badge-neutral">No Extra Stops</span>
-          </div>
-          <div class="kpi-values">
-            <div class="val-group">
-              <span class="val-label">Baseline</span>
-              <span class="val-number" id="kpiBaseStops">0.80 <span class="val-unit">stops</span></span>
+          <!-- Metric 3: AI Early Warning Lead -->
+          <div class="exec-card card-spotlight">
+            <div class="exec-card-top">
+              <span class="exec-label">AI Early-Warning Lead</span>
+              <span class="exec-pill pill-amber">Seed-42 Run</span>
             </div>
-            <div class="val-divider">→</div>
-            <div class="val-group">
-              <span class="val-label">V2I Enabled</span>
-              <span class="val-number" id="kpiV2iStops">0.80 <span class="val-unit">stops</span></span>
+            <div class="exec-val-row">
+              <span class="exec-number text-amber">+0.50</span>
+              <span class="exec-unit">s</span>
             </div>
+            <p class="exec-desc">AI forecast conflict triggered at 10.93s vs. kinematic TTC critical at 11.43s (0.50s lead window).</p>
+            <div class="exec-tag">Measured Demonstration Lead</div>
           </div>
-          <div class="kpi-footer">
-            <span class="delta-tag delta-neutral">0.00 stops change</span>
-            <span class="kpi-subtext">Deduplicated stop transitions (v = 0)</span>
-          </div>
-        </div>
 
-        <!-- KPI 5: V2I Preemption Delay -->
-        <div class="kpi-card card-timing">
-          <div class="kpi-header">
-            <span class="kpi-title">V2I Preemption Delay</span>
-            <span class="kpi-badge badge-cyan">Request → Priority</span>
-          </div>
-          <div class="kpi-timing-body">
-            <div class="timing-stat">
-              <span class="timing-number" id="kpiPreemptionDelay">0.21</span>
-              <span class="timing-unit">seconds</span>
+          <!-- Metric 4: V2I Travel Time -->
+          <div class="exec-card">
+            <div class="exec-card-top">
+              <span class="exec-label">V2I Travel Time</span>
+              <span class="exec-pill pill-green">-23.8%</span>
             </div>
-            <div class="timing-steps">
-              <div class="t-step"><span class="dot-active"></span> DSRC Latency: 200 ms</div>
-              <div class="t-step"><span class="dot-active"></span> Safety Gate Check: &lt;10 ms</div>
+            <div class="exec-val-row">
+              <span class="exec-number text-green">8.65</span>
+              <span class="exec-unit">s</span>
             </div>
+            <p class="exec-desc">Mean travel time reduced from 11.35s to 8.65s (↓2.70s) across 10 controlled paired simulation trials.</p>
+            <div class="exec-tag">10 Paired Trials Mean</div>
           </div>
-          <div class="kpi-footer">
-            <span class="delta-tag delta-cyan">Direct simulated DSRC channel</span>
-            <span class="kpi-subtext">Request transmission to priority grant</span>
+
+          <!-- Metric 5: V2I Wait Time -->
+          <div class="exec-card">
+            <div class="exec-card-top">
+              <span class="exec-label">Signal Wait Time</span>
+              <span class="exec-pill pill-green">-54.3%</span>
+            </div>
+            <div class="exec-val-row">
+              <span class="exec-number text-green">2.27</span>
+              <span class="exec-unit">s</span>
+            </div>
+            <p class="exec-desc">Mean red-light waiting time reduced from 4.97s to 2.27s (↓2.70s) through emergency preemption.</p>
+            <div class="exec-tag">10 Paired Trials Mean</div>
+          </div>
+
+          <!-- Metric 6: Physical Clearance -->
+          <div class="exec-card">
+            <div class="exec-card-top">
+              <span class="exec-label">Intersection Crossing</span>
+              <span class="exec-pill pill-neutral">0.00s Delta</span>
+            </div>
+            <div class="exec-val-row">
+              <span class="exec-number text-slate">1.73</span>
+              <span class="exec-unit">s</span>
+            </div>
+            <p class="exec-desc">Physical box crossing duration identical (1.73s vs 1.73s); gains stem purely from red delay elimination.</p>
+            <div class="exec-tag">Physical Invariance Check</div>
           </div>
         </div>
       </section>
 
-      <!-- 2. Primary Comparison & Benefit Flow Section -->
-      <section class="grid-2col">
-        <!-- Main Comparison Bar Chart -->
-        <div class="panel-card chart-panel">
-          <div class="panel-header">
-            <div>
-              <h3 class="panel-title">Baseline vs V2I Performance</h3>
-              <p class="panel-subtitle">Mean values across 10 controlled paired simulation trials</p>
-            </div>
-            <div class="chart-legend-custom">
-              <span class="legend-item"><span class="legend-color color-baseline"></span> Baseline (No V2I)</span>
-              <span class="legend-item"><span class="legend-color color-v2i"></span> V2I Enabled</span>
-            </div>
+      <!-- =====================================================================
+           SECTION 2: DUAL-LAYER V2X SYSTEM ARCHITECTURE
+           ===================================================================== -->
+      <section class="section-container" id="section-architecture">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 02</span>
+            <h2 class="section-title">Dual-Layer V2X System Architecture</h2>
+            <p class="section-desc">Coordinated integration of infrastructure preemption, peer telemetry, advisory AI, and deterministic actuation</p>
           </div>
-          <div class="chart-container" id="mainChartContainer">
-            <canvas id="mainComparisonChart"></canvas>
-          </div>
+          <span class="badge badge-outline">System Topology</span>
         </div>
 
-        <!-- Measured V2I Effect & Lifecycle Flow -->
-        <div class="panel-card">
-          <div class="panel-header">
-            <div>
-              <h3 class="panel-title">Measured V2I Effect</h3>
-              <p class="panel-subtitle">Empirical findings calculated strictly from simulation timestamps</p>
+        <div class="panel-card arch-card">
+          <!-- Visual Architecture Diagram Flow -->
+          <div class="arch-flow-diagram">
+            <!-- Top: Smart Intersection & RSU -->
+            <div class="arch-layer-box layer-infrastructure">
+              <div class="layer-header">
+                <span class="layer-badge">LAYER 1: INFRASTRUCTURE COORDINATION (V2I)</span>
+                <span class="layer-title">Smart Urban Intersection &amp; Roadside Unit (RSU-01)</span>
+              </div>
+              <div class="layer-content">
+                <div class="arch-node node-rsu">
+                  <span class="node-icon">🏢</span>
+                  <div class="node-info">
+                    <strong>RSU Signal Controller</strong>
+                    <span>DSRC 400px | 200ms Latency | Safety Mutex Gate</span>
+                  </div>
+                </div>
+                <div class="arch-conn-line conn-vertical">
+                  <span class="conn-tag">V2I Preemption Request → South GREEN Wave</span>
+                </div>
+              </div>
             </div>
-            <span class="badge badge-outline">Dynamic Summary</span>
+
+            <!-- Middle: Emergency Vehicle AMB-01 & Civilian C-01 -->
+            <div class="arch-layer-box layer-vehicles">
+              <div class="layer-header">
+                <span class="layer-badge">LAYER 2: PEER-TO-PEER VEHICULAR SAFETY (V2V)</span>
+                <span class="layer-title">Direct Vehicle-to-Vehicle Wireless Channel (AMB-01 ↔ C-01)</span>
+              </div>
+              <div class="layer-vehicles-row">
+                <div class="arch-node node-amb">
+                  <span class="node-icon">🚑</span>
+                  <div class="node-info">
+                    <strong>AMB-01 (Ambulance)</strong>
+                    <span>Priority Emergency Vehicle (Southbound corridor, 95 km/h)</span>
+                  </div>
+                </div>
+                <div class="arch-v2v-link">
+                  <span class="v2v-link-badge">10 Hz Telemetry (Range 200px, Latency 20ms)</span>
+                  <div class="v2v-wave"></div>
+                </div>
+                <div class="arch-node node-civilian">
+                  <span class="node-icon">🚗</span>
+                  <div class="node-info">
+                    <strong>C-01 (Civilian Vehicle)</strong>
+                    <span>Lead vehicle emitting state: (x, y, vx, vy, speed, heading, hazard)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom: AI Trajectory Prediction, Safety Fusion, and Actuation -->
+            <div class="arch-layer-box layer-safety">
+              <div class="layer-header">
+                <span class="layer-badge">LAYER 3: ADVISORY AI PREDICTION &amp; SAFETY FUSION</span>
+                <span class="layer-title">On-Board Decision Intelligence &amp; Authoritative Physical Actuation</span>
+              </div>
+              <div class="arch-safety-grid">
+                <div class="safety-subnode">
+                  <div class="subnode-header">
+                    <span class="subnode-icon">🧠</span>
+                    <strong>Advisory AI Predictor</strong>
+                  </div>
+                  <p>PyTorch MLP ingests 5 historical telemetry timesteps (40 features) to project 6 future waypoints over a 1.50s horizon.</p>
+                  <span class="subnode-tag tag-advisory">Role: Advisory Forecast</span>
+                </div>
+
+                <div class="safety-subnode">
+                  <div class="subnode-header">
+                    <span class="subnode-icon">📐</span>
+                    <strong>Geometric Conflict Gate</strong>
+                  </div>
+                  <p>Analyzes projected waypoints against ambulance forward safety corridor (75px bumper buffer threshold).</p>
+                  <span class="subnode-tag tag-analysis">Role: Corridor Analysis</span>
+                </div>
+
+                <div class="safety-subnode">
+                  <div class="subnode-header">
+                    <span class="subnode-icon">⚖️</span>
+                    <strong>Deterministic Safety Fusion</strong>
+                  </div>
+                  <p>Fuses advisory AI conflict alert with authoritative kinematic TTC (< 2.0s). Assesses target lane clearance.</p>
+                  <span class="subnode-tag tag-fusion">Role: Decision Arbitrator</span>
+                </div>
+
+                <div class="safety-subnode node-actuation">
+                  <div class="subnode-header">
+                    <span class="subnode-icon">🔄</span>
+                    <strong>Authoritative Actuation</strong>
+                  </div>
+                  <p>Executes safe lateral evasive maneuver to Lane 2 (x=628.0) if clear, or controlled emergency braking if blocked.</p>
+                  <span class="subnode-tag tag-authoritative">Role: Authoritative Safety</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <!-- Impact Metrics Grid -->
-          <div class="effect-metrics-grid">
-            <div class="effect-box effect-travel">
-              <span class="eff-label">Mean Travel Time</span>
-              <span class="eff-value" id="effTravelVal">↓ 2.70 s</span>
-              <span class="eff-sub" id="effTravelPct">23.8% reduction</span>
+          <!-- Conceptual Distinction Summary -->
+          <div class="arch-distinction-grid">
+            <div class="dist-card">
+              <strong class="text-cyan">V2I Infrastructure</strong>
+              <span>Macro-level traffic flow coordination, preemption priority, and green-wave signal clearance.</span>
             </div>
-            <div class="effect-box effect-wait">
-              <span class="eff-label">Mean Signal Waiting</span>
-              <span class="eff-value" id="effWaitVal">↓ 2.70 s</span>
-              <span class="eff-sub" id="effWaitPct">54.3% reduction</span>
+            <div class="dist-card">
+              <strong class="text-purple">V2V Telemetry</strong>
+              <span>Micro-level vehicle awareness delivering real-time kinematics beyond line-of-sight sensors.</span>
             </div>
-            <div class="effect-box effect-clear">
-              <span class="eff-label">Intersection Clearance</span>
-              <span class="eff-value" id="effClearVal">0.00 s</span>
-              <span class="eff-sub">Unchanged crossing time</span>
+            <div class="dist-card">
+              <strong class="text-amber">Advisory AI</strong>
+              <span>Short-horizon neural network forecasting of lead peer trajectory; advisory and non-controlling.</span>
             </div>
-            <div class="effect-box effect-stops">
-              <span class="eff-label">Full Stops</span>
-              <span class="eff-value" id="effStopsVal">0.00</span>
-              <span class="eff-sub">Unchanged stop count</span>
-            </div>
-          </div>
-
-          <!-- V2I Preemption Event Flow Pipeline -->
-          <div class="flow-pipeline-card">
-            <div class="pipeline-title">V2I Emergency Preemption Pipeline</div>
-            <div class="pipeline-steps">
-              <div class="p-node"><span class="p-code">AMB-01</span><span class="p-name">Ambulance</span></div>
-              <div class="p-arrow">→</div>
-              <div class="p-node node-comm"><span class="p-code">V2I DSRC</span><span class="p-name">Req Packet</span></div>
-              <div class="p-arrow">→</div>
-              <div class="p-node"><span class="p-code">RSU-01</span><span class="p-name">Conflict Gate</span></div>
-              <div class="p-arrow">→</div>
-              <div class="p-node node-signal"><span class="p-code">YELLOW/RED</span><span class="p-name">Clearance</span></div>
-              <div class="p-arrow">→</div>
-              <div class="p-node node-green"><span class="p-code">SOUTH GREEN</span><span class="p-name">Preemption</span></div>
-              <div class="p-arrow">→</div>
-              <div class="p-node"><span class="p-code">CROSSING</span><span class="p-name">Exit Detect</span></div>
-              <div class="p-arrow">→</div>
-              <div class="p-node node-rec"><span class="p-code">RECOVERY</span><span class="p-name">Normal Cycle</span></div>
+            <div class="dist-card">
+              <strong class="text-green">Kinematic TTC</strong>
+              <span>Authoritative physical safety bounds guaranteeing collision prevention under all failure modes.</span>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- 3. Trial-by-Trial Comparison Charts -->
-      <section class="grid-2col">
-        <!-- Travel Time Across All Trials Chart -->
-        <div class="panel-card chart-panel">
-          <div class="panel-header">
-            <div>
-              <h3 class="panel-title">Travel Time Across All Controlled Trials</h3>
-              <p class="panel-subtitle">Demonstrates paired consistency across systematic signal cycle arrival windows</p>
-            </div>
+      <!-- =====================================================================
+           SECTION 3: V2V PEER TELEMETRY & CHRONOLOGICAL TIMELINE
+           ===================================================================== -->
+      <section class="section-container" id="section-v2v-telemetry">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 03</span>
+            <h2 class="section-title">V2V Communication &amp; Quantitative Analysis</h2>
+            <p class="section-desc">Real-time peer telemetry → trajectory prediction → conflict detection → safety response</p>
           </div>
-          <div class="chart-container" id="trialChartContainer">
-            <canvas id="trialTravelTimeChart"></canvas>
+          <span class="badge badge-accent">Verified Simulation Parameters</span>
+        </div>
+
+        <!-- Metric Cards Row (6 Verified Parameters) -->
+        <div class="v2v-param-grid">
+          <div class="v2v-param-card">
+            <span class="v2v-param-title">Broadcast Frequency</span>
+            <span class="v2v-param-val text-cyan">10 Hz</span>
+            <p class="v2v-param-desc">Vehicles emit telemetry packets every 100 ms to provide fresh kinematic state.</p>
+          </div>
+          <div class="v2v-param-card">
+            <span class="v2v-param-title">Simulated Range</span>
+            <span class="v2v-param-val text-blue">200 px</span>
+            <p class="v2v-param-desc">Direct wireless communication sphere for peer-to-peer discovery and packet delivery.</p>
+          </div>
+          <div class="v2v-param-card">
+            <span class="v2v-param-title">Direct Latency</span>
+            <span class="v2v-param-val text-purple">~20 ms</span>
+            <p class="v2v-param-desc">Simulated peer packet transit delay between transmission and receiver queue delivery.</p>
+          </div>
+          <div class="v2v-param-card">
+            <span class="v2v-param-title">Validity Hold Window</span>
+            <span class="v2v-param-val text-amber">0.40 s</span>
+            <p class="v2v-param-desc">Holds latest valid prediction across 10 Hz packet boundaries before declaring stale data.</p>
+          </div>
+          <div class="v2v-param-card">
+            <span class="v2v-param-title">Minimum History</span>
+            <span class="v2v-param-val text-green">5 Packets</span>
+            <p class="v2v-param-desc">Requires 5 consecutive observations before neural network inference activates.</p>
+          </div>
+          <div class="v2v-param-card">
+            <span class="v2v-param-title">Forecast Horizon</span>
+            <span class="v2v-param-val text-cyan">1.50 s</span>
+            <p class="v2v-param-desc">Forward temporal window covering 6 predicted trajectory waypoints spaced at 0.25s.</p>
           </div>
         </div>
 
-        <!-- Signal Waiting Time Across All Trials Chart -->
-        <div class="panel-card chart-panel">
-          <div class="panel-header">
-            <div>
-              <h3 class="panel-title">Signal Waiting Time Across Trials</h3>
-              <p class="panel-subtitle">Visual proof that V2I primarily eliminates adverse red-light waiting time</p>
+        <div class="grid-2col" style="margin-top: 20px;">
+          <!-- Telemetry Packet Inspector Card -->
+          <div class="panel-card packet-inspector-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">V2V Telemetry Packet Inspector</h3>
+                <p class="panel-subtitle">Representative decoded telemetry packet from verified simulation run</p>
+              </div>
+              <span class="packet-live-dot" title="10 Hz Simulated Stream">● 10 Hz DSRC</span>
+            </div>
+
+            <div class="packet-body">
+              <div class="packet-header-row">
+                <span class="packet-tag">MESSAGE TYPE: BSM / CAM</span>
+                <span class="packet-id">PACKET ID: #C01-V2V-0802</span>
+              </div>
+
+              <div class="packet-fields-table">
+                <div class="pfield-row">
+                  <span class="pfield-key">Sender ID</span>
+                  <span class="pfield-val text-cyan">C-01</span>
+                  <span class="pfield-meta">Lead Civilian Vehicle</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Receiver ID</span>
+                  <span class="pfield-val text-blue">AMB-01</span>
+                  <span class="pfield-meta">Peer Broadcast Delivery</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Approach Corridor</span>
+                  <span class="pfield-val">SOUTH Approach</span>
+                  <span class="pfield-meta">Primary Lane (x = 592.0 px)</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Position Coordinates</span>
+                  <span class="pfield-val font-mono">(592.00, 582.00) px</span>
+                  <span class="pfield-meta">Continuous Simulation Coordinates</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Velocity Vector</span>
+                  <span class="pfield-val font-mono">(0.00, -18.20) px/s</span>
+                  <span class="pfield-meta">Pure Northbound Translation</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Linear Speed</span>
+                  <span class="pfield-val font-mono">18.20 px/s (65.5 km/h)</span>
+                  <span class="pfield-meta">Target Cruising Velocity</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Heading Angle</span>
+                  <span class="pfield-val font-mono">0.0° (NORTHBOUND)</span>
+                  <span class="pfield-meta">Aligned with Corridor Axis</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Hazard State</span>
+                  <span class="pfield-val text-amber">ACTIVE (Lead Hazard)</span>
+                  <span class="pfield-meta">Obstacle for Overtaking Ambulance</span>
+                </div>
+                <div class="pfield-row">
+                  <span class="pfield-key">Packet Timestamp</span>
+                  <span class="pfield-val font-mono">7.770 s</span>
+                  <span class="pfield-meta">Synchronized Clock Epoch</span>
+                </div>
+              </div>
+              <div class="packet-footnote">
+                <span>* Representative telemetry packet from verified simulation run. Fields correspond to <code>v2i/vehicles/civilian_vehicle.py</code> telemetry contract.</span>
+              </div>
             </div>
           </div>
-          <div class="chart-container" id="waitChartContainer">
-            <canvas id="trialSignalWaitChart"></canvas>
+
+          <!-- Chronological Event Timeline Card -->
+          <div class="panel-card timeline-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">V2V &amp; AI Event Timeline</h3>
+                <p class="panel-subtitle">Verified Seed-42 demonstration chronological event sequence</p>
+              </div>
+              <span class="badge badge-outline">Seed 42 Runtime</span>
+            </div>
+
+            <div class="timeline-stepper">
+              <!-- Event 1 -->
+              <div class="timeline-step">
+                <div class="step-time font-mono">7.77 s</div>
+                <div class="step-marker"></div>
+                <div class="step-content">
+                  <strong class="step-title">C-01 Enters South Approach &amp; Begins Telemetry</strong>
+                  <p class="step-text">Civilian vehicle C-01 spawns at y=790px and begins broadcasting 10 Hz V2V telemetry to the peer network.</p>
+                </div>
+              </div>
+
+              <!-- Event 2 -->
+              <div class="timeline-step">
+                <div class="step-time font-mono">8.02 s</div>
+                <div class="step-marker marker-green"></div>
+                <div class="step-content">
+                  <strong class="step-title">5 Telemetry Packets Collected → AI Active</strong>
+                  <p class="step-text">History FIFO accumulates 5 valid packets. Neural network predictor transitions from <code>COLLECTING DATA</code> to <code>ACTIVE</code>; generates first 6-waypoint forecast.</p>
+                </div>
+              </div>
+
+              <!-- Event 3 -->
+              <div class="timeline-step">
+                <div class="step-time font-mono">10.93 s</div>
+                <div class="step-marker marker-amber"></div>
+                <div class="step-content">
+                  <strong class="step-title">AI Forecast Predicts Developing Conflict</strong>
+                  <p class="step-text">Geometric corridor analysis flags predicted clearance drop to 72.8px (below 75px safety threshold). Risk state updates to <code>PREDICTED_CONFLICT</code>.</p>
+                </div>
+              </div>
+
+              <!-- Event 4 -->
+              <div class="timeline-step">
+                <div class="step-time font-mono">11.43 s</div>
+                <div class="step-marker marker-red"></div>
+                <div class="step-content">
+                  <strong class="step-title">Kinematic TTC Reaches Critical Threshold</strong>
+                  <p class="step-text">Physical range-rate calculation triggers critical warning (TTC = 1.99s &le; 2.0s threshold). Confirms imminent physical collision hazard.</p>
+                </div>
+              </div>
+
+              <!-- Event 5 -->
+              <div class="timeline-step">
+                <div class="step-time font-mono">11.45 s</div>
+                <div class="step-marker marker-blue"></div>
+                <div class="step-content">
+                  <strong class="step-title">Ambulance Evasive Lane Change Initiated</strong>
+                  <p class="step-text">Safety Fusion verifies Lane 2 is clear and initiates lateral evasive maneuver toward x=628.0 px while retaining priority emergency speed.</p>
+                </div>
+              </div>
+
+              <!-- Event 6 -->
+              <div class="timeline-step">
+                <div class="step-time font-mono">12.25 s</div>
+                <div class="step-marker marker-green"></div>
+                <div class="step-content">
+                  <strong class="step-title">Evasive Maneuver Complete → Protected Crossing</strong>
+                  <p class="step-text">Ambulance establishes stable lane position in passing corridor with 0.00 collision risk, continuing uninterrupted to V2I-preempted green signal.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 4. Interactive Paired Trials Table -->
-      <section class="panel-card">
+      <!-- =====================================================================
+           SECTION 4: AI TRAJECTORY PREDICTION & MODEL ARCHITECTURE
+           ===================================================================== -->
+      <section class="section-container" id="section-ai-trajectory">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 04</span>
+            <h2 class="section-title">AI Trajectory Prediction &amp; Model Architecture</h2>
+            <p class="section-desc">Neural network trajectory forecasting trained specifically for smart intersection collision avoidance</p>
+          </div>
+          <span class="badge badge-ai">PyTorch MLP Model</span>
+        </div>
+
+        <div class="grid-2col">
+          <!-- Model Architecture Card -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Neural Network Specification</h3>
+                <p class="panel-subtitle">Lightweight trajectory forecasting neural network</p>
+              </div>
+              <span class="badge badge-purple">PyTorch Sequential</span>
+            </div>
+
+            <div class="model-spec-grid">
+              <div class="mspec-item">
+                <span class="mspec-label">Architecture</span>
+                <span class="mspec-val">Multi-Layer Perceptron (MLP)</span>
+                <span class="mspec-sub">Fully connected feed-forward</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Input Dimension</span>
+                <span class="mspec-val">40 Features</span>
+                <span class="mspec-sub">5 timesteps &times; 8 state features</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Hidden Layers</span>
+                <span class="mspec-val">64 &rarr; 64 Neurons</span>
+                <span class="mspec-sub">ReLU nonlinear activations</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Output Dimension</span>
+                <span class="mspec-val">12 Values (6 Waypoints)</span>
+                <span class="mspec-sub">6 future (x, y) coordinates</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Temporal Spacing</span>
+                <span class="mspec-val">0.25 seconds</span>
+                <span class="mspec-sub">Step resolution per waypoint</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Forecast Horizon</span>
+                <span class="mspec-val">1.50 seconds</span>
+                <span class="mspec-sub">Total forward forecast window</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Inference Latency</span>
+                <span class="mspec-val text-green">&sim;1.77 ms</span>
+                <span class="mspec-sub">Measured on CPU execution</span>
+              </div>
+              <div class="mspec-item">
+                <span class="mspec-label">Feature Scaler</span>
+                <span class="mspec-val text-cyan">StandardScaler (Fast Unpickler)</span>
+                <span class="mspec-sub">0.5ms zero-overhead deserializer</span>
+              </div>
+            </div>
+
+            <div class="model-pipeline-flow">
+              <div class="mp-step">
+                <span class="mp-box">V2V Telemetry<br><small>10 Hz Stream</small></span>
+              </div>
+              <span class="mp-arrow">&rarr;</span>
+              <div class="mp-step">
+                <span class="mp-box">FIFO Buffer<br><small>5 Observations</small></span>
+              </div>
+              <span class="mp-arrow">&rarr;</span>
+              <div class="mp-step">
+                <span class="mp-box mp-ai">PyTorch MLP<br><small>40 &rarr; 64 &rarr; 64 &rarr; 12</small></span>
+              </div>
+              <span class="mp-arrow">&rarr;</span>
+              <div class="mp-step">
+                <span class="mp-box">6 Waypoints<br><small>1.50s Horizon</small></span>
+              </div>
+              <span class="mp-arrow">&rarr;</span>
+              <div class="mp-step">
+                <span class="mp-box mp-fusion">Safety Fusion<br><small>Corridor Check</small></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Interactive Trajectory Visualization Card -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Predicted Trajectory Waypoints</h3>
+                <p class="panel-subtitle">Example AI prediction from verified Seed-42 runtime (C-01)</p>
+              </div>
+              <span class="badge badge-cyan">Visual Trajectory Inspector</span>
+            </div>
+
+            <!-- Canvas Visualization Container -->
+            <div class="traj-vis-container">
+              <canvas id="trajectoryCanvas" width="460" height="240"></canvas>
+            </div>
+
+            <!-- Waypoints Data Table -->
+            <div class="waypoints-mini-table">
+              <div class="wp-row wp-header">
+                <span>Waypoint</span>
+                <span>Horizon</span>
+                <span>Coordinates (x, y)</span>
+                <span>Lead Distance</span>
+              </div>
+              <div class="wp-row">
+                <span><span class="wp-dot"></span> WP #1</span>
+                <span>+0.25 s</span>
+                <span class="font-mono">(592.0, 737.0) px</span>
+                <span>26.0 px forward</span>
+              </div>
+              <div class="wp-row">
+                <span><span class="wp-dot"></span> WP #2</span>
+                <span>+0.50 s</span>
+                <span class="font-mono">(592.0, 710.5) px</span>
+                <span>52.5 px forward</span>
+              </div>
+              <div class="wp-row">
+                <span><span class="wp-dot"></span> WP #3</span>
+                <span>+0.75 s</span>
+                <span class="font-mono">(591.7, 684.4) px</span>
+                <span>78.6 px forward</span>
+              </div>
+              <div class="wp-row">
+                <span><span class="wp-dot"></span> WP #4</span>
+                <span>+0.25 s</span>
+                <span class="font-mono">(591.8, 658.7) px</span>
+                <span>104.3 px forward</span>
+              </div>
+              <div class="wp-row">
+                <span><span class="wp-dot"></span> WP #5</span>
+                <span>+1.25 s</span>
+                <span class="font-mono">(591.9, 633.2) px</span>
+                <span>129.8 px forward</span>
+              </div>
+              <div class="wp-row wp-final">
+                <span><span class="wp-dot wp-dot-final"></span> WP #6 [HORIZON]</span>
+                <span>+1.50 s</span>
+                <span class="font-mono">(591.8, 608.1) px</span>
+                <span>154.9 px forward</span>
+              </div>
+            </div>
+            <span class="text-muted" style="font-size: 11px; margin-top: 6px; display: block;">
+              * Plotted from verified Seed-42 initial prediction. Trajectory updates at 10 Hz continuously following vehicle motion.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SECTION 5: QUANTITATIVE COMPARISON: ADVISORY AI VS DETERMINISTIC TTC
+           ===================================================================== -->
+      <section class="section-container" id="section-ai-vs-ttc">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 05</span>
+            <h2 class="section-title">Quantitative Comparison: Advisory AI vs. Kinematic TTC</h2>
+            <p class="section-desc">Comparing early-horizon trajectory conflict forecasting with immediate physical Time-To-Collision</p>
+          </div>
+          <span class="badge badge-accent">Safety Lead Time Analysis</span>
+        </div>
+
+        <div class="grid-2col">
+          <!-- Interactive Comparison Chart Panel -->
+          <div class="panel-card chart-panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Conflict Detection Timeline (Seed 42)</h3>
+                <p class="panel-subtitle">Visualizing the early-warning lead window before TTC reaches critical</p>
+              </div>
+              <span class="badge badge-amber">+0.50 s Early Warning</span>
+            </div>
+            <div class="chart-container" style="min-height: 240px;">
+              <canvas id="aiVsTtcChart"></canvas>
+            </div>
+            <div class="lead-explanation-box">
+              <div class="lead-badge-strip">
+                <span class="l-badge l-ai">AI Conflict: <strong>10.93 s</strong></span>
+                <span class="l-arrow">&rarr;</span>
+                <span class="l-lead">+0.50 s Lead Window</span>
+                <span class="l-arrow">&rarr;</span>
+                <span class="l-badge l-ttc">TTC Critical: <strong>11.43 s</strong></span>
+              </div>
+              <p class="lead-prose">
+                AI provides a short-horizon forecast of the other vehicle's future trajectory, while TTC evaluates collision urgency from current relative motion. In this demonstration, the AI conflict prediction occurred <strong>0.50 seconds</strong> before TTC crossed the critical threshold.
+              </p>
+              <span class="disclaimer-tag">This value is scenario-specific and is not a universal performance guarantee.</span>
+            </div>
+          </div>
+
+          <!-- TTC Mathematical Foundations Panel -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Time-To-Collision (TTC) Kinematics</h3>
+                <p class="panel-subtitle">Deterministic physical safety foundation</p>
+              </div>
+              <span class="badge badge-cyan">Physical Formulation</span>
+            </div>
+
+            <!-- Math Formula Boxes -->
+            <div class="math-formula-card">
+              <div class="formula-row">
+                <span class="formula-label">Closing Speed</span>
+                <span class="formula-code">V_closing = V_ambulance - V_lead</span>
+              </div>
+              <div class="formula-row">
+                <span class="formula-label">Time-To-Collision</span>
+                <span class="formula-code">TTC = (Bumper Gap) / V_closing</span>
+              </div>
+            </div>
+
+            <!-- TTC Classification Thresholds -->
+            <div class="ttc-thresholds-grid">
+              <div class="ttc-thresh-card thresh-safe">
+                <span class="ttc-status">TTC &gt; 4.0 s</span>
+                <strong class="ttc-level">SAFE</strong>
+                <span class="ttc-action">Nominal following speed; priority emergency cruising permitted.</span>
+              </div>
+              <div class="ttc-thresh-card thresh-warn">
+                <span class="ttc-status">2.0 s &ndash; 4.0 s</span>
+                <strong class="ttc-level">WARNING</strong>
+                <span class="ttc-action">Closing rate elevated; prepare lateral passing corridor.</span>
+              </div>
+              <div class="ttc-thresh-card thresh-crit">
+                <span class="ttc-status">TTC &lt; 2.0 s</span>
+                <strong class="ttc-level">CRITICAL</strong>
+                <span class="ttc-action">Immediate collision threat; mandatory evasive lane change or braking.</span>
+              </div>
+            </div>
+
+            <!-- Authoritative Safety Principle Callout -->
+            <div class="safety-principle-banner">
+              <span class="sp-icon">🛡️</span>
+              <div class="sp-text">
+                <strong>Safety Governance Hierarchy:</strong>
+                TTC is authoritative for immediate physical safety. AI trajectory prediction is strictly advisory and cannot override physical TTC limits.
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SECTION 6: SAFETY FUSION & FAILURE / FALLBACK MODES
+           ===================================================================== -->
+      <section class="section-container" id="section-safety-fusion">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 06</span>
+            <h2 class="section-title">Safety Fusion Engine &amp; Fallback Analysis</h2>
+            <p class="section-desc">Deterministic arbitration logic and robust fail-safe operational behavior</p>
+          </div>
+          <span class="badge badge-outline">Fail-Safe Engineering</span>
+        </div>
+
+        <div class="grid-2col">
+          <!-- Interactive Decision Tree Panel -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Safety Fusion Decision Tree</h3>
+                <p class="panel-subtitle">Hierarchical logic reconciling advisory AI with deterministic physics</p>
+              </div>
+              <span class="badge badge-accent">Decision Logic</span>
+            </div>
+
+            <div class="decision-tree-container">
+              <!-- Root -->
+              <div class="dt-node dt-root">
+                <strong>V2V Telemetry Ingested</strong>
+                <span>Evaluate Advisory AI Trajectory Prediction</span>
+              </div>
+
+              <!-- Level 1: AI Branch -->
+              <div class="dt-branch-row">
+                <div class="dt-branch">
+                  <span class="branch-pill pill-safe">AI: SAFE</span>
+                  <div class="dt-node dt-action dt-continue">
+                    <strong>Continue Cruising</strong>
+                    <span>Path clear; maintain lane</span>
+                  </div>
+                </div>
+
+                <div class="dt-branch">
+                  <span class="branch-pill pill-warn">AI: CONFLICT</span>
+                  <div class="dt-node dt-decision">
+                    <strong>Evaluate Physical TTC</strong>
+                    <span>Range-rate collision urgency</span>
+                  </div>
+
+                  <!-- Level 2: TTC Branch -->
+                  <div class="dt-subbranch-row">
+                    <div class="dt-subbranch">
+                      <span class="branch-pill pill-warn">TTC: 2–4s (WARN)</span>
+                      <div class="dt-node dt-action dt-prepare">
+                        <strong>Prepare Evasion</strong>
+                        <span>Scan target lane clearance</span>
+                      </div>
+                    </div>
+
+                    <div class="dt-subbranch">
+                      <span class="branch-pill pill-crit">TTC &lt; 2s (CRIT)</span>
+                      <div class="dt-node dt-decision">
+                        <strong>Check Adjacent Lane</strong>
+                        <span>Lane 2 (x=628) clearance</span>
+                      </div>
+
+                      <!-- Level 3: Lane Clearance Branch -->
+                      <div class="dt-leaf-row">
+                        <div class="dt-leaf">
+                          <span class="branch-pill pill-safe">Lane CLEAR</span>
+                          <div class="dt-node dt-action dt-evade">
+                            <strong>Evasive Maneuver</strong>
+                            <span>Shift to Lane 2 (x=628)</span>
+                          </div>
+                        </div>
+                        <div class="dt-leaf">
+                          <span class="branch-pill pill-crit">Lane BLOCKED</span>
+                          <div class="dt-node dt-action dt-brake">
+                            <strong>Emergency Braking</strong>
+                            <span>Controlled stop in lane</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="decision-footer">
+              <span><strong>Principle:</strong> AI alerts prime the system early, but physical actuators only trigger on verified kinematic TTC and spatial clearance.</span>
+            </div>
+          </div>
+
+          <!-- Fallback Scenarios Matrix Panel -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Safety Under Communication &amp; Maneuver Failure</h3>
+                <p class="panel-subtitle">Demonstrates that collision avoidance does not depend on AI alone</p>
+              </div>
+              <span class="badge badge-green">5 Robust Scenarios</span>
+            </div>
+
+            <div class="scenarios-matrix">
+              <!-- Scenario A -->
+              <div class="scenario-item">
+                <div class="sc-badge badge-green">SCENARIO A</div>
+                <div class="sc-body">
+                  <strong>Nominal Dual-Layer Operation (Ideal V2V + AI)</strong>
+                  <p>10 Hz telemetry present &rarr; AI prediction active &rarr; +0.50s advisory lead &rarr; smooth evasive lane change to Lane 2.</p>
+                </div>
+              </div>
+
+              <!-- Scenario B -->
+              <div class="scenario-item">
+                <div class="sc-badge badge-amber">SCENARIO B</div>
+                <div class="sc-body">
+                  <strong>Insufficient Telemetry History (&lt; 5 Samples)</strong>
+                  <p>AI displays <code>COLLECTING DATA (k/5)</code>. Pure deterministic TTC handles collision avoidance; no false predictions.</p>
+                </div>
+              </div>
+
+              <!-- Scenario C -->
+              <div class="scenario-item">
+                <div class="sc-badge badge-red">SCENARIO C</div>
+                <div class="sc-body">
+                  <strong>AI Predictor Offline / Initialization Failure</strong>
+                  <p>AI displays <code>UNAVAILABLE</code>. Kinematic TTC and local spatial buffer completely govern safety. Zero simulation disruption.</p>
+                </div>
+              </div>
+
+              <!-- Scenario D -->
+              <div class="scenario-item">
+                <div class="sc-badge badge-purple">SCENARIO D</div>
+                <div class="sc-body">
+                  <strong>Adjacent Passing Lane Blocked by Civilian Traffic</strong>
+                  <p>TTC reaches critical, but target lane check fails. Safety Fusion commands immediate in-lane emergency braking to avoid collision.</p>
+                </div>
+              </div>
+
+              <!-- Scenario E -->
+              <div class="scenario-item">
+                <div class="sc-badge badge-cyan">SCENARIO E</div>
+                <div class="sc-body">
+                  <strong>Inside Central Intersection Box</strong>
+                  <p>V2I preemption protects corridor. Lateral lane changes are locked inside intersection box to eliminate side collisions.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SECTION 7: V2I INFRASTRUCTURE BENCHMARK ANALYSIS (PRESERVED PHASE 10)
+           ===================================================================== -->
+      <section class="section-container" id="section-v2i-benchmarks">
+        <div class="section-header">
+          <div class="section-title-wrap">
+            <span class="section-index">SECTION 07</span>
+            <h2 class="section-title">V2I Infrastructure Preemption Benchmark</h2>
+            <p class="section-desc">Rigorous quantitative comparison across 10 controlled paired simulation trials (Baseline vs. V2I)</p>
+          </div>
+          <span class="badge badge-accent">10 Paired Trials (20 Executions)</span>
+        </div>
+
+        <!-- 1. Primary KPI Summary Cards -->
+        <div class="kpi-grid">
+          <!-- KPI 1: Mean Travel Time -->
+          <div class="kpi-card card-primary">
+            <div class="kpi-header">
+              <span class="kpi-title">Mean Travel Time</span>
+              <span class="kpi-badge badge-green" id="kpiTravelTimeReduction">-23.8%</span>
+            </div>
+            <div class="kpi-values">
+              <div class="val-group">
+                <span class="val-label">Baseline</span>
+                <span class="val-number num-baseline" id="kpiBaseTravelTime">11.35 <span class="val-unit">s</span></span>
+              </div>
+              <div class="val-divider">→</div>
+              <div class="val-group">
+                <span class="val-label">V2I Enabled</span>
+                <span class="val-number num-v2i" id="kpiV2iTravelTime">8.65 <span class="val-unit">s</span></span>
+              </div>
+            </div>
+            <div class="kpi-footer">
+              <span class="delta-tag delta-positive" id="kpiTravelTimeDelta">↓ 2.70 s travel time reduction</span>
+              <span class="kpi-subtext">Spawn to full-body intersection clearance</span>
+            </div>
+          </div>
+
+          <!-- KPI 2: Mean Signal Waiting Time -->
+          <div class="kpi-card card-accent">
+            <div class="kpi-header">
+              <span class="kpi-title">Mean Signal Waiting Time</span>
+              <span class="kpi-badge badge-green" id="kpiSignalWaitReduction">-54.3%</span>
+            </div>
+            <div class="kpi-values">
+              <div class="val-group">
+                <span class="val-label">Baseline</span>
+                <span class="val-number num-baseline" id="kpiBaseSignalWait">4.97 <span class="val-unit">s</span></span>
+              </div>
+              <div class="val-divider">→</div>
+              <div class="val-group">
+                <span class="val-label">V2I Enabled</span>
+                <span class="val-number num-v2i" id="kpiV2iSignalWait">2.27 <span class="val-unit">s</span></span>
+              </div>
+            </div>
+            <div class="kpi-footer">
+              <span class="delta-tag delta-positive" id="kpiSignalWaitDelta">↓ 2.70 s wait time reduction</span>
+              <span class="kpi-subtext">Time in WAITING_AT_RED state</span>
+            </div>
+          </div>
+
+          <!-- KPI 3: Mean Intersection Clearance -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Intersection Clearance</span>
+              <span class="kpi-badge badge-neutral">Identical</span>
+            </div>
+            <div class="kpi-values">
+              <div class="val-group">
+                <span class="val-label">Baseline</span>
+                <span class="val-number" id="kpiBaseClearance">1.73 <span class="val-unit">s</span></span>
+              </div>
+              <div class="val-divider">→</div>
+              <div class="val-group">
+                <span class="val-label">V2I Enabled</span>
+                <span class="val-number" id="kpiV2iClearance">1.73 <span class="val-unit">s</span></span>
+              </div>
+            </div>
+            <div class="kpi-footer">
+              <span class="delta-tag delta-neutral">0.00 s physical delta</span>
+              <span class="kpi-subtext">Stop line crossing to full exit</span>
+            </div>
+          </div>
+
+          <!-- KPI 4: Mean Full Stops -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Mean Full Stops</span>
+              <span class="kpi-badge badge-neutral">No Extra Stops</span>
+            </div>
+            <div class="kpi-values">
+              <div class="val-group">
+                <span class="val-label">Baseline</span>
+                <span class="val-number" id="kpiBaseStops">0.80 <span class="val-unit">stops</span></span>
+              </div>
+              <div class="val-divider">→</div>
+              <div class="val-group">
+                <span class="val-label">V2I Enabled</span>
+                <span class="val-number" id="kpiV2iStops">0.80 <span class="val-unit">stops</span></span>
+              </div>
+            </div>
+            <div class="kpi-footer">
+              <span class="delta-tag delta-neutral">0.00 stops change</span>
+              <span class="kpi-subtext">Deduplicated stop transitions (v = 0)</span>
+            </div>
+          </div>
+
+          <!-- KPI 5: V2I Preemption Delay -->
+          <div class="kpi-card card-timing">
+            <div class="kpi-header">
+              <span class="kpi-title">V2I Preemption Delay</span>
+              <span class="kpi-badge badge-cyan">Request → Priority</span>
+            </div>
+            <div class="kpi-timing-body">
+              <div class="timing-stat">
+                <span class="timing-number" id="kpiPreemptionDelay">0.21</span>
+                <span class="timing-unit">seconds</span>
+              </div>
+              <div class="timing-steps">
+                <div class="t-step"><span class="dot-active"></span> DSRC Latency: 200 ms</div>
+                <div class="t-step"><span class="dot-active"></span> Safety Gate Check: &lt;10 ms</div>
+              </div>
+            </div>
+            <div class="kpi-footer">
+              <span class="delta-tag delta-cyan">Direct simulated DSRC channel</span>
+              <span class="kpi-subtext">Request transmission to priority grant</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Primary Comparison & Benefit Flow Section -->
+        <div class="grid-2col" style="margin-top: 20px;">
+          <!-- Main Comparison Bar Chart -->
+          <div class="panel-card chart-panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Baseline vs. V2I Performance</h3>
+                <p class="panel-subtitle">Mean values across 10 controlled paired simulation trials</p>
+              </div>
+              <div class="chart-legend-custom">
+                <span class="legend-item"><span class="legend-color color-baseline"></span> Baseline (No V2I)</span>
+                <span class="legend-item"><span class="legend-color color-v2i"></span> V2I Enabled</span>
+              </div>
+            </div>
+            <div class="chart-container" id="mainChartContainer">
+              <canvas id="mainComparisonChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Measured V2I Effect & Lifecycle Flow -->
+          <div class="panel-card">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Measured V2I Effect</h3>
+                <p class="panel-subtitle">Empirical findings calculated strictly from simulation timestamps</p>
+              </div>
+              <span class="badge badge-outline">Dynamic Summary</span>
+            </div>
+
+            <!-- Impact Metrics Grid -->
+            <div class="effect-metrics-grid">
+              <div class="effect-box effect-travel">
+                <span class="eff-label">Mean Travel Time</span>
+                <span class="eff-value" id="effTravelVal">↓ 2.70 s</span>
+                <span class="eff-sub" id="effTravelPct">23.8% reduction</span>
+              </div>
+              <div class="effect-box effect-wait">
+                <span class="eff-label">Mean Signal Waiting</span>
+                <span class="eff-value" id="effWaitVal">↓ 2.70 s</span>
+                <span class="eff-sub" id="effWaitPct">54.3% reduction</span>
+              </div>
+              <div class="effect-box effect-clear">
+                <span class="eff-label">Intersection Clearance</span>
+                <span class="eff-value" id="effClearVal">0.00 s</span>
+                <span class="eff-sub">Unchanged crossing time</span>
+              </div>
+              <div class="effect-box effect-stops">
+                <span class="eff-label">Full Stops</span>
+                <span class="eff-value" id="effStopsVal">0.00</span>
+                <span class="eff-sub">Unchanged stop count</span>
+              </div>
+            </div>
+
+            <!-- V2I Preemption Event Flow Pipeline -->
+            <div class="flow-pipeline-card">
+              <div class="pipeline-title">V2I Emergency Preemption Pipeline</div>
+              <div class="pipeline-steps">
+                <div class="p-node"><span class="p-code">AMB-01</span><span class="p-name">Ambulance</span></div>
+                <div class="p-arrow">→</div>
+                <div class="p-node node-comm"><span class="p-code">V2I DSRC</span><span class="p-name">Req Packet</span></div>
+                <div class="p-arrow">→</div>
+                <div class="p-node"><span class="p-code">RSU-01</span><span class="p-name">Conflict Gate</span></div>
+                <div class="p-arrow">→</div>
+                <div class="p-node node-signal"><span class="p-code">YELLOW/RED</span><span class="p-name">Clearance</span></div>
+                <div class="p-arrow">→</div>
+                <div class="p-node node-green"><span class="p-code">SOUTH GREEN</span><span class="p-name">Preemption</span></div>
+                <div class="p-arrow">→</div>
+                <div class="p-node"><span class="p-code">CROSSING</span><span class="p-name">Exit Detect</span></div>
+                <div class="p-arrow">→</div>
+                <div class="p-node node-rec"><span class="p-code">RECOVERY</span><span class="p-name">Normal Cycle</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Trial-by-Trial Comparison Charts -->
+        <div class="grid-2col" style="margin-top: 20px;">
+          <!-- Travel Time Across All Trials Chart -->
+          <div class="panel-card chart-panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Travel Time Across All Controlled Trials</h3>
+                <p class="panel-subtitle">Demonstrates paired consistency across systematic signal cycle arrival windows</p>
+              </div>
+            </div>
+            <div class="chart-container" id="trialChartContainer">
+              <canvas id="trialTravelTimeChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Signal Waiting Time Across All Trials Chart -->
+          <div class="panel-card chart-panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">Signal Waiting Time Across Trials</h3>
+                <p class="panel-subtitle">Visual proof that V2I primarily eliminates adverse red-light waiting time</p>
+              </div>
+            </div>
+            <div class="chart-container" id="waitChartContainer">
+              <canvas id="trialSignalWaitChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =====================================================================
+           SECTION 8: INTERACTIVE PAIRED TRIALS DATASET TABLE
+           ===================================================================== -->
+      <section class="panel-card" id="section-trials-table">
         <div class="panel-header">
           <div>
             <h3 class="panel-title">Controlled Paired Trials Dataset</h3>
-            <p class="panel-subtitle">Exact measured values for all 10 simulation trials (Baseline vs V2I)</p>
+            <p class="panel-subtitle">Exact measured values for all 10 simulation trials (Baseline vs. V2I)</p>
           </div>
           <div class="table-tools">
             <input type="text" id="tableFilterInput" placeholder="Filter trials..." class="table-search-input">
@@ -345,8 +1204,10 @@
         </div>
       </section>
 
-      <!-- 5. Engineering Methodology & Key Insights -->
-      <section class="grid-3col">
+      <!-- =====================================================================
+           SECTION 9: ENGINEERING METHODOLOGY & RESEARCH DISCLAIMER
+           ===================================================================== -->
+      <section class="grid-3col" style="margin-top: 20px;">
         <!-- Card 1: Experimental Methodology -->
         <div class="panel-card info-card">
           <div class="info-icon">🔬</div>
@@ -357,7 +1218,7 @@
             <li><strong>Physics &amp; Kinematics:</strong> Strictly identical 60 Hz timesteps.</li>
             <li><strong>Traffic Conditions:</strong> Identical PRNG seeds and civilian spawns.</li>
             <li><strong>Baseline Mode:</strong> Normal cycle; emergency preemption disabled.</li>
-            <li><strong>V2I Mode:</strong> DSRC request → conflict check → preemption.</li>
+            <li><strong>V2I Mode:</strong> DSRC request &rarr; conflict check &rarr; preemption.</li>
             <li><strong>Timeouts / Failures:</strong> 0 timeouts, 0 collisions, 0 safety violations.</li>
           </ul>
         </div>
@@ -382,13 +1243,13 @@
           <div class="info-icon">🛡️</div>
           <h4 class="info-title">Academic &amp; Research Disclaimer</h4>
           <p class="info-prose">
-            <strong>Simulation Result:</strong> These measurements represent the behavior of the implemented Python/Pygame V2I smart intersection simulation under the defined controlled scenarios.
+            <strong>Simulation Result:</strong> These measurements represent the behavior of the implemented Python/Pygame V2X smart intersection simulation under the defined controlled scenarios.
           </p>
           <p class="info-prose">
-            They demonstrate the mathematical and physical efficacy of the implemented DSRC emergency signal-preemption mechanism and should not be interpreted as empirical real-world field test data.
+            They demonstrate the mathematical and physical efficacy of the implemented DSRC emergency signal-preemption and V2V evasive safety mechanisms and should not be interpreted as empirical real-world field test data.
           </p>
           <div class="audit-badge">
-            <span>Verified by 116 / 116 Automated Tests</span>
+            <span>Verified by 226 / 226 Automated Tests</span>
           </div>
         </div>
       </section>
@@ -397,12 +1258,14 @@
     <!-- Footer -->
     <footer class="dashboard-footer">
       <div class="footer-left">
-        <span>V2I Smart Intersection Simulation — Phase 10 Benefit Dashboard</span>
+        <span>AI-Based Collision Avoidance System Using V2X Communication</span>
+        <span class="footer-dot">•</span>
+        <span>Dual-Layer V2I + V2V + Advisory AI Architecture</span>
         <span class="footer-dot">•</span>
         <span>Deterministic Paired Benchmark Suite</span>
       </div>
       <div class="footer-right">
-        <span>Authoritative Data: <code>benchmark_results.json</code></span>
+        <span>Authoritative Data: <code>benchmark_results.json</code> &amp; Verified Seed-42 Runtime</span>
       </div>
     </footer>
   </div>
