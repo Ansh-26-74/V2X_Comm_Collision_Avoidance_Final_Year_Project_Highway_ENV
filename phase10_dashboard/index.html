@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>V2I Smart Intersection — Phase 10 Quantitative Benefit Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Chart.js from CDN with graceful SVG canvas fallback -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="dashboard-container" id="dashboardContainer">
+    <!-- Top Header & Controls Toolbar -->
+    <header class="header-card">
+      <div class="header-main">
+        <div class="brand-group">
+          <div class="brand-icon">
+            <span class="icon-symbol">📡</span>
+            <span class="icon-pulse"></span>
+          </div>
+          <div class="title-meta">
+            <div class="project-tagline">
+              <span class="badge badge-accent">PHASE 10 COMPLETE</span>
+              <span class="badge badge-outline">Controlled Simulation Benchmark</span>
+              <span class="badge badge-subtle" id="dataSourceBadge">Source: benchmark_results.json</span>
+            </div>
+            <h1 class="main-title">V2I SMART INTERSECTION</h1>
+            <h2 class="sub-title">Quantitative Emergency Signal Preemption Benefit Analysis</h2>
+          </div>
+        </div>
+
+        <!-- Metric Badges & Presentation Toolbar -->
+        <div class="header-toolbar">
+          <div class="meta-stats-strip">
+            <div class="stat-chip">
+              <span class="chip-label">Trials</span>
+              <span class="chip-val" id="metaTotalTrials">10 Paired</span>
+            </div>
+            <div class="stat-chip">
+              <span class="chip-label">Sim Runs</span>
+              <span class="chip-val" id="metaSimRuns">20 Total</span>
+            </div>
+            <div class="stat-chip">
+              <span class="chip-label">Test Suite</span>
+              <span class="chip-val chip-highlight">116 / 116 Passing</span>
+            </div>
+          </div>
+
+          <div class="action-buttons">
+            <button class="btn btn-secondary" id="reloadBtn" title="Reload benchmark_results.json">
+              <span class="btn-icon">↻</span> Reload Data
+            </button>
+            <label class="btn btn-primary" id="loadJsonLabel" title="Select benchmark_results.json file from disk">
+              <span class="btn-icon">📂</span> Load JSON
+              <input type="file" id="jsonFileInput" accept=".json" style="display: none;">
+            </label>
+            <button class="btn btn-accent" id="presentationBtn" title="Toggle Classroom Presentation View">
+              <span class="btn-icon">📺</span> Presentation Mode
+            </button>
+            <button class="btn btn-ghost" id="fullscreenBtn" title="Toggle Fullscreen">
+              <span class="btn-icon">⛶</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Local File Security Banner (Displayed only if browser blocks local fetch) -->
+    <div class="banner-alert" id="fileNoticeBanner" style="display: none;">
+      <div class="alert-content">
+        <span class="alert-icon">⚠️</span>
+        <div class="alert-text">
+          <strong>Local Browser Security Restriction (file:// protocol):</strong>
+          Direct JSON fetch was restricted by browser origin policy. Please click <strong>Load JSON</strong> to select <code>benchmark_results.json</code> from the project folder.
+        </div>
+      </div>
+      <button class="btn btn-sm btn-accent" onclick="document.getElementById('jsonFileInput').click()">
+        Select benchmark_results.json
+      </button>
+    </div>
+
+    <!-- Error Display (Hidden by default) -->
+    <div class="error-panel" id="errorPanel" style="display: none;">
+      <div class="error-icon">⛔</div>
+      <h3 id="errorTitle">Benchmark Data Could Not Be Loaded</h3>
+      <p id="errorMessage">Please select <code>benchmark_results.json</code> using the "Load JSON" button above.</p>
+      <button class="btn btn-primary" onclick="document.getElementById('jsonFileInput').click()">Select benchmark_results.json</button>
+    </div>
+
+    <!-- Main Dashboard Content -->
+    <main class="dashboard-content" id="mainDashboardContent">
+      <!-- 1. Primary KPI Summary Cards -->
+      <section class="kpi-grid">
+        <!-- KPI 1: Mean Travel Time -->
+        <div class="kpi-card card-primary">
+          <div class="kpi-header">
+            <span class="kpi-title">Mean Travel Time</span>
+            <span class="kpi-badge badge-green" id="kpiTravelTimeReduction">-23.8%</span>
+          </div>
+          <div class="kpi-values">
+            <div class="val-group">
+              <span class="val-label">Baseline</span>
+              <span class="val-number num-baseline" id="kpiBaseTravelTime">11.35 <span class="val-unit">s</span></span>
+            </div>
+            <div class="val-divider">→</div>
+            <div class="val-group">
+              <span class="val-label">V2I Enabled</span>
+              <span class="val-number num-v2i" id="kpiV2iTravelTime">8.65 <span class="val-unit">s</span></span>
+            </div>
+          </div>
+          <div class="kpi-footer">
+            <span class="delta-tag delta-positive" id="kpiTravelTimeDelta">↓ 2.70 s travel time reduction</span>
+            <span class="kpi-subtext">Spawn to full-body intersection clearance</span>
+          </div>
+        </div>
+
+        <!-- KPI 2: Mean Signal Waiting Time -->
+        <div class="kpi-card card-accent">
+          <div class="kpi-header">
+            <span class="kpi-title">Mean Signal Waiting Time</span>
+            <span class="kpi-badge badge-green" id="kpiSignalWaitReduction">-54.3%</span>
+          </div>
+          <div class="kpi-values">
+            <div class="val-group">
+              <span class="val-label">Baseline</span>
+              <span class="val-number num-baseline" id="kpiBaseSignalWait">4.97 <span class="val-unit">s</span></span>
+            </div>
+            <div class="val-divider">→</div>
+            <div class="val-group">
+              <span class="val-label">V2I Enabled</span>
+              <span class="val-number num-v2i" id="kpiV2iSignalWait">2.27 <span class="val-unit">s</span></span>
+            </div>
+          </div>
+          <div class="kpi-footer">
+            <span class="delta-tag delta-positive" id="kpiSignalWaitDelta">↓ 2.70 s wait time reduction</span>
+            <span class="kpi-subtext">Time in WAITING_AT_RED state</span>
+          </div>
+        </div>
+
+        <!-- KPI 3: Mean Intersection Clearance -->
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Intersection Clearance</span>
+            <span class="kpi-badge badge-neutral">Identical</span>
+          </div>
+          <div class="kpi-values">
+            <div class="val-group">
+              <span class="val-label">Baseline</span>
+              <span class="val-number" id="kpiBaseClearance">1.73 <span class="val-unit">s</span></span>
+            </div>
+            <div class="val-divider">→</div>
+            <div class="val-group">
+              <span class="val-label">V2I Enabled</span>
+              <span class="val-number" id="kpiV2iClearance">1.73 <span class="val-unit">s</span></span>
+            </div>
+          </div>
+          <div class="kpi-footer">
+            <span class="delta-tag delta-neutral">0.00 s physical delta</span>
+            <span class="kpi-subtext">Stop line crossing to full exit</span>
+          </div>
+        </div>
+
+        <!-- KPI 4: Mean Full Stops -->
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Mean Full Stops</span>
+            <span class="kpi-badge badge-neutral">No Extra Stops</span>
+          </div>
+          <div class="kpi-values">
+            <div class="val-group">
+              <span class="val-label">Baseline</span>
+              <span class="val-number" id="kpiBaseStops">0.80 <span class="val-unit">stops</span></span>
+            </div>
+            <div class="val-divider">→</div>
+            <div class="val-group">
+              <span class="val-label">V2I Enabled</span>
+              <span class="val-number" id="kpiV2iStops">0.80 <span class="val-unit">stops</span></span>
+            </div>
+          </div>
+          <div class="kpi-footer">
+            <span class="delta-tag delta-neutral">0.00 stops change</span>
+            <span class="kpi-subtext">Deduplicated stop transitions (v = 0)</span>
+          </div>
+        </div>
+
+        <!-- KPI 5: V2I Preemption Delay -->
+        <div class="kpi-card card-timing">
+          <div class="kpi-header">
+            <span class="kpi-title">V2I Preemption Delay</span>
+            <span class="kpi-badge badge-cyan">Request → Priority</span>
+          </div>
+          <div class="kpi-timing-body">
+            <div class="timing-stat">
+              <span class="timing-number" id="kpiPreemptionDelay">0.21</span>
+              <span class="timing-unit">seconds</span>
+            </div>
+            <div class="timing-steps">
+              <div class="t-step"><span class="dot-active"></span> DSRC Latency: 200 ms</div>
+              <div class="t-step"><span class="dot-active"></span> Safety Gate Check: &lt;10 ms</div>
+            </div>
+          </div>
+          <div class="kpi-footer">
+            <span class="delta-tag delta-cyan">Direct simulated DSRC channel</span>
+            <span class="kpi-subtext">Request transmission to priority grant</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Primary Comparison & Benefit Flow Section -->
+      <section class="grid-2col">
+        <!-- Main Comparison Bar Chart -->
+        <div class="panel-card chart-panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">Baseline vs V2I Performance</h3>
+              <p class="panel-subtitle">Mean values across 10 controlled paired simulation trials</p>
+            </div>
+            <div class="chart-legend-custom">
+              <span class="legend-item"><span class="legend-color color-baseline"></span> Baseline (No V2I)</span>
+              <span class="legend-item"><span class="legend-color color-v2i"></span> V2I Enabled</span>
+            </div>
+          </div>
+          <div class="chart-container" id="mainChartContainer">
+            <canvas id="mainComparisonChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Measured V2I Effect & Lifecycle Flow -->
+        <div class="panel-card">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">Measured V2I Effect</h3>
+              <p class="panel-subtitle">Empirical findings calculated strictly from simulation timestamps</p>
+            </div>
+            <span class="badge badge-outline">Dynamic Summary</span>
+          </div>
+
+          <!-- Impact Metrics Grid -->
+          <div class="effect-metrics-grid">
+            <div class="effect-box effect-travel">
+              <span class="eff-label">Mean Travel Time</span>
+              <span class="eff-value" id="effTravelVal">↓ 2.70 s</span>
+              <span class="eff-sub" id="effTravelPct">23.8% reduction</span>
+            </div>
+            <div class="effect-box effect-wait">
+              <span class="eff-label">Mean Signal Waiting</span>
+              <span class="eff-value" id="effWaitVal">↓ 2.70 s</span>
+              <span class="eff-sub" id="effWaitPct">54.3% reduction</span>
+            </div>
+            <div class="effect-box effect-clear">
+              <span class="eff-label">Intersection Clearance</span>
+              <span class="eff-value" id="effClearVal">0.00 s</span>
+              <span class="eff-sub">Unchanged crossing time</span>
+            </div>
+            <div class="effect-box effect-stops">
+              <span class="eff-label">Full Stops</span>
+              <span class="eff-value" id="effStopsVal">0.00</span>
+              <span class="eff-sub">Unchanged stop count</span>
+            </div>
+          </div>
+
+          <!-- V2I Preemption Event Flow Pipeline -->
+          <div class="flow-pipeline-card">
+            <div class="pipeline-title">V2I Emergency Preemption Pipeline</div>
+            <div class="pipeline-steps">
+              <div class="p-node"><span class="p-code">AMB-01</span><span class="p-name">Ambulance</span></div>
+              <div class="p-arrow">→</div>
+              <div class="p-node node-comm"><span class="p-code">V2I DSRC</span><span class="p-name">Req Packet</span></div>
+              <div class="p-arrow">→</div>
+              <div class="p-node"><span class="p-code">RSU-01</span><span class="p-name">Conflict Gate</span></div>
+              <div class="p-arrow">→</div>
+              <div class="p-node node-signal"><span class="p-code">YELLOW/RED</span><span class="p-name">Clearance</span></div>
+              <div class="p-arrow">→</div>
+              <div class="p-node node-green"><span class="p-code">SOUTH GREEN</span><span class="p-name">Preemption</span></div>
+              <div class="p-arrow">→</div>
+              <div class="p-node"><span class="p-code">CROSSING</span><span class="p-name">Exit Detect</span></div>
+              <div class="p-arrow">→</div>
+              <div class="p-node node-rec"><span class="p-code">RECOVERY</span><span class="p-name">Normal Cycle</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Trial-by-Trial Comparison Charts -->
+      <section class="grid-2col">
+        <!-- Travel Time Across All Trials Chart -->
+        <div class="panel-card chart-panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">Travel Time Across All Controlled Trials</h3>
+              <p class="panel-subtitle">Demonstrates paired consistency across systematic signal cycle arrival windows</p>
+            </div>
+          </div>
+          <div class="chart-container" id="trialChartContainer">
+            <canvas id="trialTravelTimeChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Signal Waiting Time Across All Trials Chart -->
+        <div class="panel-card chart-panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">Signal Waiting Time Across Trials</h3>
+              <p class="panel-subtitle">Visual proof that V2I primarily eliminates adverse red-light waiting time</p>
+            </div>
+          </div>
+          <div class="chart-container" id="waitChartContainer">
+            <canvas id="trialSignalWaitChart"></canvas>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Interactive Paired Trials Table -->
+      <section class="panel-card">
+        <div class="panel-header">
+          <div>
+            <h3 class="panel-title">Controlled Paired Trials Dataset</h3>
+            <p class="panel-subtitle">Exact measured values for all 10 simulation trials (Baseline vs V2I)</p>
+          </div>
+          <div class="table-tools">
+            <input type="text" id="tableFilterInput" placeholder="Filter trials..." class="table-search-input">
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table" id="trialsTable">
+            <thead>
+              <tr>
+                <th data-sort="trial_id">Trial #</th>
+                <th data-sort="seed">Seed</th>
+                <th data-sort="base_tt">Baseline Travel</th>
+                <th data-sort="v2i_tt">V2I Travel</th>
+                <th data-sort="diff_tt">Travel Difference</th>
+                <th data-sort="base_sw">Baseline Wait</th>
+                <th data-sort="v2i_sw">V2I Wait</th>
+                <th data-sort="diff_sw">Wait Difference</th>
+                <th data-sort="stops">Stops (Base / V2I)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="trialsTableBody">
+              <!-- Dynamically rendered via script.js -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 5. Engineering Methodology & Key Insights -->
+      <section class="grid-3col">
+        <!-- Card 1: Experimental Methodology -->
+        <div class="panel-card info-card">
+          <div class="info-icon">🔬</div>
+          <h4 class="info-title">Experimental Methodology</h4>
+          <ul class="info-list">
+            <li><strong>Paired Trials:</strong> 10 controlled runs across varying signal offsets.</li>
+            <li><strong>Total Executions:</strong> 20 headless deterministic simulation runs.</li>
+            <li><strong>Physics &amp; Kinematics:</strong> Strictly identical 60 Hz timesteps.</li>
+            <li><strong>Traffic Conditions:</strong> Identical PRNG seeds and civilian spawns.</li>
+            <li><strong>Baseline Mode:</strong> Normal cycle; emergency preemption disabled.</li>
+            <li><strong>V2I Mode:</strong> DSRC request → conflict check → preemption.</li>
+            <li><strong>Timeouts / Failures:</strong> 0 timeouts, 0 collisions, 0 safety violations.</li>
+          </ul>
+        </div>
+
+        <!-- Card 2: What the Measurements Show -->
+        <div class="panel-card info-card">
+          <div class="info-icon">💡</div>
+          <h4 class="info-title">What the Measurements Show</h4>
+          <p class="info-prose">
+            The measured reduction in total travel time (mean <strong>-2.70 s</strong> / <strong>23.8%</strong>) is primarily associated with reduced signal waiting time (mean <strong>-2.70 s</strong> / <strong>54.3%</strong>).
+          </p>
+          <p class="info-prose">
+            Intersection clearance time remained strictly unchanged (<strong>1.73 s vs 1.73 s</strong>), and full stop counts were identical (<strong>0.80 vs 0.80</strong>).
+          </p>
+          <p class="info-prose">
+            This indicates that, under these controlled simulation conditions, the measured benefit emerges from eliminating signal-induced delay rather than altering physical crossing velocity.
+          </p>
+        </div>
+
+        <!-- Card 3: Simulation Disclaimer -->
+        <div class="panel-card info-card">
+          <div class="info-icon">🛡️</div>
+          <h4 class="info-title">Academic &amp; Research Disclaimer</h4>
+          <p class="info-prose">
+            <strong>Simulation Result:</strong> These measurements represent the behavior of the implemented Python/Pygame V2I smart intersection simulation under the defined controlled scenarios.
+          </p>
+          <p class="info-prose">
+            They demonstrate the mathematical and physical efficacy of the implemented DSRC emergency signal-preemption mechanism and should not be interpreted as empirical real-world field test data.
+          </p>
+          <div class="audit-badge">
+            <span>Verified by 116 / 116 Automated Tests</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="dashboard-footer">
+      <div class="footer-left">
+        <span>V2I Smart Intersection Simulation — Phase 10 Benefit Dashboard</span>
+        <span class="footer-dot">•</span>
+        <span>Deterministic Paired Benchmark Suite</span>
+      </div>
+      <div class="footer-right">
+        <span>Authoritative Data: <code>benchmark_results.json</code></span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
