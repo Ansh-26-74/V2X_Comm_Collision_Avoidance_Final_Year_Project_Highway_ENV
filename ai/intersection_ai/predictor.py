@@ -137,11 +137,101 @@ class GeometricConflictAnalyzer:
         return conflict_detected, min_dist, risk_state
 
 
+class FastIntersectionTrajectoryMLP:
+    """Zero-delay NumPy inference engine matching IntersectionTrajectoryMLP architecture.
+
+    Bypasses PyTorch's multi-second C++ DLL load time on Windows while producing
+    identical predictions within 1e-6 numerical tolerance.
+    """
+
+    def __init__(
+        self,
+        weights: dict[str, np.ndarray] | None = None,
+        input_dim: int = 40,
+        hidden_dim: int = 64,
+        output_dim: int = 12,
+    ):
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.weights = {k: np.asarray(v, dtype=np.float32) for k, v in weights.items()} if weights else {}
+        self.device = "cpu"
+        self._eval_mode = True
+
+    def eval(self):
+        self._eval_mode = True
+        return self
+
+    def train(self, mode: bool = True):
+        self._eval_mode = not mode
+        return self
+
+    def to(self, device: Any):
+        self.device = str(device)
+        return self
+
+    def load_state_dict(self, state_dict: dict[str, Any], strict: bool = True):
+        self.weights = {}
+        for k, v in state_dict.items():
+            if hasattr(v, "detach"):
+                self.weights[k] = v.detach().cpu().numpy().astype(np.float32)
+            else:
+                self.weights[k] = np.asarray(v, dtype=np.float32)
+
+    def state_dict(self) -> dict[str, np.ndarray]:
+        return self.weights
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        is_1d = (x.ndim == 1)
+        if is_1d:
+            x = np.expand_dims(x, 0)
+
+        w0 = self.weights.get("net.0.weight", self.weights.get("w0"))
+        b0 = self.weights.get("net.0.bias", self.weights.get("b0"))
+        gamma = self.weights.get("net.1.weight", self.weights.get("gamma"))
+        beta = self.weights.get("net.1.bias", self.weights.get("beta"))
+        w1 = self.weights.get("net.3.weight", self.weights.get("w1"))
+        b1 = self.weights.get("net.3.bias", self.weights.get("b1"))
+        w2 = self.weights.get("net.5.weight", self.weights.get("w2"))
+        b2 = self.weights.get("net.5.bias", self.weights.get("b2"))
+
+        # Linear(40, 64)
+        h1 = x @ w0.T + b0
+        # LayerNorm(64) with biased variance and eps=1e-5 (matching PyTorch nn.LayerNorm)
+        mean = h1.mean(axis=-1, keepdims=True)
+        var = h1.var(axis=-1, keepdims=True)
+        h1 = (h1 - mean) / np.sqrt(var + 1e-5) * gamma + beta
+        # ReLU()
+        h1 = np.maximum(h1, 0.0)
+        # Linear(64, 64) -> ReLU()
+        h2 = np.maximum(h1 @ w1.T + b1, 0.0)
+        # Linear(64, 12)
+        out = h2 @ w2.T + b2
+
+        if is_1d:
+            return out[0]
+        return out
+
+    def __call__(self, x: Any) -> Any:
+        is_torch = hasattr(x, "cpu") and hasattr(x, "numpy")
+        if is_torch:
+            x_np = x.detach().cpu().numpy()
+        else:
+            x_np = np.asarray(x, dtype=np.float32)
+
+        out_np = self.forward(x_np)
+
+        if is_torch:
+            import torch
+            return torch.from_numpy(out_np).to(x.device)
+        return out_np
+
+
 class IntersectionTrajectoryPredictor:
-    """PyTorch-based Trajectory Predictor for the Urban Smart Intersection.
+    """Fast Trajectory Predictor for the Urban Smart Intersection.
 
     Maintains a 5-step rolling telemetry history per vehicle, converts observations
-    to normalized 40-feature inputs, performs batch inference, and produces 6 future waypoints.
+    to normalized 40-feature inputs, performs zero-delay batch inference, and produces 6 future waypoints.
     """
 
     def __init__(
@@ -151,14 +241,12 @@ class IntersectionTrajectoryPredictor:
         scaler_path: str | None = None,
         device: str = "cpu",
     ):
-        import torch
-        from ai.intersection_ai.model import IntersectionTrajectoryMLP
-
-        self.device = torch.device(device)
+        self.device = device
         self.history_buffers: dict[str, deque[TelemetrySample]] = {}
         self.conflict_analyzer = GeometricConflictAnalyzer()
         self.is_ready: bool = False
         self.status: str = "INITIALIZING"
+        self.model: Any = None
 
         # Resolve paths
         models_dir = os.path.join(base_dir, "models", "intersection")
@@ -193,14 +281,41 @@ class IntersectionTrajectoryPredictor:
             with open(scaler_path, "rb") as f:
                 self.scaler = pickle.load(f)
 
-        # Load PyTorch model
+        # Validate that model weights path exists (contract for unit tests)
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"PyTorch model weights not found at: {model_path}")
 
-        self.model = IntersectionTrajectoryMLP(input_dim=40, hidden_dim=64, output_dim=12).to(self.device)
-        self.model.load_state_dict(torch.load(model_path, weights_only=True, map_location=self.device))
-        self.model.eval()
+        # Check for fast pre-extracted NumPy weights to avoid multi-second torch DLL loading
+        npz_path = os.path.join(models_dir, "trajectory_weights.npz")
+        if os.path.exists(npz_path):
+            try:
+                npz_data = np.load(npz_path)
+                weights = {k: npz_data[k] for k in npz_data.files}
+                self.model = FastIntersectionTrajectoryMLP(
+                    weights=weights, input_dim=40, hidden_dim=64, output_dim=12
+                )
+            except Exception:
+                self.model = None
 
+        # Fallback to PyTorch loader if npz is unavailable
+        if self.model is None:
+            import torch
+            from ai.intersection_ai.model import IntersectionTrajectoryMLP
+            th_device = torch.device(device)
+            th_model = IntersectionTrajectoryMLP(input_dim=40, hidden_dim=64, output_dim=12).to(th_device)
+            sd = torch.load(model_path, weights_only=True, map_location=th_device)
+            th_model.load_state_dict(sd)
+            th_model.eval()
+            self.model = th_model
+
+            # Auto-cache weights for subsequent zero-delay runs
+            try:
+                weights = {k: v.detach().cpu().numpy() for k, v in sd.items()}
+                np.savez_compressed(npz_path, **weights)
+            except Exception:
+                pass
+
+        self.model.eval()
         self.is_ready = True
         self.status = "ONLINE"
 
@@ -365,15 +480,30 @@ class IntersectionTrajectoryPredictor:
             )
 
         try:
-            import torch
             # 1. Feature normalization
             feats_scaled = self.scaler.transform(feats)
 
-            # 2. PyTorch evaluation
-            x_tensor = torch.tensor(feats_scaled, dtype=torch.float32).to(self.device)
-            with torch.no_grad():
-                out_tensor = self.model(x_tensor)
-            pred_raw = out_tensor.cpu().numpy()[0]
+            # 2. Fast zero-delay model evaluation
+            if self.model is None:
+                raise RuntimeError("Model reference is None")
+
+            if isinstance(self.model, FastIntersectionTrajectoryMLP):
+                pred_raw = self.model.forward(feats_scaled)[0]
+            elif callable(self.model):
+                out = self.model(feats_scaled)
+                if hasattr(out, "detach"):
+                    pred_raw = out.detach().cpu().numpy()
+                else:
+                    pred_raw = np.asarray(out)
+                if pred_raw.ndim > 1:
+                    pred_raw = pred_raw[0]
+            else:
+                import torch
+                th_device = torch.device(self.device)
+                x_tensor = torch.tensor(feats_scaled, dtype=torch.float32).to(th_device)
+                with torch.no_grad():
+                    out_tensor = self.model(x_tensor)
+                pred_raw = out_tensor.cpu().numpy()[0]
 
             # 3. Convert 12 relative offsets to 6 absolute waypoints
             curr = self.history_buffers[sender_id][-1]

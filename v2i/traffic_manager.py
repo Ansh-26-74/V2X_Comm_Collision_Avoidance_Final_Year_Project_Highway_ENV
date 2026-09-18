@@ -1091,27 +1091,33 @@ class TrafficManager:
                 intersection_blocked=blocked,
             )
 
-        # Ingestion of civilian telemetry (e.g. C-01) while ambulance has not yet spawned
-        if self.ambulance is None:
-            for v in self.vehicles:
-                if v.vehicle_id == "C-01":
-                    v_msg = v.get_v2v_telemetry(sim_time)
-                    if self.ai_predictor is not None:
-                        hist = self.ai_predictor.history_buffers.get("C-01")
-                        if not hist or abs(hist[-1].timestamp - v_msg.timestamp) > 0.05:
-                            self.ai_predictor.add_telemetry(v_msg)
-                            pred = self.ai_predictor.predict(
-                                sender_id="C-01",
-                                ambulance_pos=None,
-                                ambulance_speed=95.0,
-                            )
-                            self.latest_ai_prediction = pred
-                    else:
-                        if "C-01" not in self._pending_v2v_telemetry:
-                            self._pending_v2v_telemetry["C-01"] = deque(maxlen=20)
-                        buf = self._pending_v2v_telemetry["C-01"]
-                        if not buf or abs(buf[-1].timestamp - v_msg.timestamp) > 0.05:
-                            buf.append(v_msg)
+        # Ingestion of civilian telemetry (e.g. C-01) for intersection-level AI trajectory tracking
+        for v in self.vehicles:
+            if v.vehicle_id == "C-01":
+                v_msg = v.get_v2v_telemetry(sim_time)
+                if self.ai_predictor is not None:
+                    hist = self.ai_predictor.history_buffers.get("C-01")
+                    if not hist or abs(hist[-1].timestamp - v_msg.timestamp) > 0.05:
+                        self.ai_predictor.add_telemetry(v_msg)
+                        amb_pos = (self.ambulance.x, self.ambulance.y) if self.ambulance else None
+                        amb_spd = self.ambulance.speed if self.ambulance else 95.0
+                        pred = self.ai_predictor.predict(
+                            sender_id="C-01",
+                            ambulance_pos=amb_pos,
+                            ambulance_speed=amb_spd,
+                        )
+                        self.latest_ai_prediction = pred
+                        if self.ambulance is not None and not self.ambulance.ai_prediction_available:
+                            self.ambulance.latest_ai_prediction = pred
+                            self.ambulance.ai_prediction_available = pred.prediction_available
+                            self.ambulance.ai_risk_state = pred.ai_risk_state
+                            self._last_ai_feed_time = sim_time
+                else:
+                    if "C-01" not in self._pending_v2v_telemetry:
+                        self._pending_v2v_telemetry["C-01"] = deque(maxlen=20)
+                    buf = self._pending_v2v_telemetry["C-01"]
+                    if not buf or abs(buf[-1].timestamp - v_msg.timestamp) > 0.05:
+                        buf.append(v_msg)
 
         # 3. Update ambulance (Phase 3 & 4: obeys traffic signals, no V2I preemption)
         if self.ambulance is not None:
